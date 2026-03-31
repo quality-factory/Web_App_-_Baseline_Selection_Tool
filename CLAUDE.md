@@ -29,7 +29,6 @@ This is a PHP + JavaScript web application with a Python curation pipeline.
 
 - `docs/functional-design-v1.md` — What the system does (technology-agnostic)
 - `docs/technical-design-v1.md` — How it is built and deployed
-- `docs/action-plan-v1.md` — Phased implementation plan
 - `docs/sovereignty-classification.md` — INTERNAL; infrastructure sovereignty assessment
 - `docs/governance-change-privacystatement-v2.md` — Deferred v2 privacy statement trigger
 - Hosting infrastructure changes: [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18)
