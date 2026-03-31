@@ -145,19 +145,7 @@ Store the following as WordPress options — not hardcoded:
 
 ## Change 4 — X-Frame-Options Override for BST Path
 
-**Scope:** `httpdocs/my/bst/` directory `.htaccess`
-**Duration:** Permanent.
-
-The global `.htaccess` sets `X-Frame-Options "SAMEORIGIN"` sitewide. The BST requires the stricter `"DENY"`. Append the following to the `httpdocs/my/bst/` directory `.htaccess`:
-
-```apache
-# Override global X-Frame-Options for BST
-<IfModule mod_headers.c>
-    Header always set X-Frame-Options "DENY"
-</IfModule>
-```
-
-**Verification:** After deployment, check the response headers for a BST page in browser developer tools. Confirm that exactly one `X-Frame-Options` header is present with value `DENY` (not `SAMEORIGIN`, not both).
+**Superseded.** This change has been generalized to cover all factory web apps under `/my/` and is now tracked in [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18) (Change 4). The X-Frame-Options DENY header is set once in `httpdocs/my/.htaccess`, not per-app.
 
 ---
 
@@ -185,7 +173,7 @@ Migration requires DNS record creation by Hosting.nl, a Plesk subdomain with ded
 | 1b | HTTP Basic Auth on `httpdocs/my/bst/` | `httpdocs/my/bst/.htaccess` | Immediately | Temporary — remove when GT&C + popup are live |
 | 2 | GT&C + privacy statement links in footer | WordPress theme/plugin | Before BST go-live | Permanent |
 | 3 | GT&C agree popup with server-side logging | WordPress theme/plugin | Before removing 1b | Permanent |
-| 4 | X-Frame-Options DENY override for BST path | `httpdocs/my/bst/.htaccess` | Before BST go-live | Permanent |
+| 4 | ~~X-Frame-Options DENY override for BST path~~ | — | — | **Superseded** by [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18) Change 4 (general `/my/` rule) |
 
 ---
 
