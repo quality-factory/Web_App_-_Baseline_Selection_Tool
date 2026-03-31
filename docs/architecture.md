@@ -362,7 +362,7 @@ Disclaimer text is sourced exclusively from the knowledge base — not hardcoded
 | GitHub (source control, CI) | Microsoft (US) | (b) Tolerable with exit strategy | Git distributed; full local copy always available; CI workflows portable YAML |
 | GitHub Actions (CI) | Microsoft (US) | (b) Tolerable with exit strategy | Workflow definitions portable to GitLab CI, Forgejo, or equivalent |
 
-Full sovereignty classification: `docs/sovereignty-classification.md` (INTERNAL).
+Factory-wide sovereignty classifications: SubscriptionFactory.md §Production Enabler Inventory.
 
 ## Open Technical Decisions
 
