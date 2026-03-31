@@ -32,4 +32,3 @@ This is a PHP + JavaScript web application with a Python curation pipeline.
 - `docs/operations.md` — Deployment pipeline, verification checklist, operational notes
 - Hosting infrastructure: [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18)
 - Privacy statement v2 trigger: [Infra_-_Subscription_Factory#19](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/19)
-- GT&C governance change evidence: `Infra_-_Subscription_Factory/governance/governance-change-subscriptionfactory-gtc.md`
