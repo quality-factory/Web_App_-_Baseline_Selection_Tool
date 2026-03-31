@@ -3,7 +3,7 @@ AGENTS.md
 
 **Status**: Normative
 **Version**: 13.2.0 | Build: <BUILD_VERSION>
-This version of `AGENTS.md` is aligned with version 13.3.0 of `SubscriptionFactory.md`.
+This version of `AGENTS.md` is aligned with version 13.4.0 of `SubscriptionFactory.md`.
 
 ---
 
