@@ -1,0 +1,29 @@
+name: Bug
+description: Report existing functionality that is broken or degraded.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Functional problem
+      description: What is broken or degraded? Include steps to reproduce if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Where does this occur?
+      placeholder: |
+        - OS:
+        - Runtime version:
+        - Passes in CI: yes / no
+    validations:
+      required: false
+  - type: textarea
+    id: likely-cause
+    attributes:
+      label: Likely root cause
+      description: If known, describe the suspected cause.
+    validations:
+      required: false

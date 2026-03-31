@@ -1,0 +1,64 @@
+#!/bin/sh
+# pre-commit hook: warn when protected files are staged for commit.
+#
+# Reads the protected file list from PROTECTED_FILES.md and checks
+# whether any staged files match. This is a warning-only hook -- it
+# does not block the commit. CI enforcement is the blocking
+# gate for protected file modifications.
+#
+# Bypass:
+#   git commit --no-verify
+#
+# Install:
+#   git config core.hooksPath hooks
+
+# Locate PROTECTED_FILES.md relative to the repo root.
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+PROTECTED_FILE="$REPO_ROOT/PROTECTED_FILES.md"
+
+if [ ! -f "$PROTECTED_FILE" ]; then
+    # No inventory file -- nothing to check.
+    exit 0
+fi
+
+# Parse protected paths from the table (lines matching '| `<path>` |').
+# Uses sed instead of grep -P for POSIX portability.
+PROTECTED_PATHS=$(sed -n 's/^| `\([^`]*\)` |.*/\1/p' "$PROTECTED_FILE" 2>/dev/null || true)
+
+if [ -z "$PROTECTED_PATHS" ]; then
+    exit 0
+fi
+
+# Get staged files.
+STAGED=$(git diff --cached --name-only 2>/dev/null || echo "")
+
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+# Check each protected path against staged files.
+# Uses a temp file to avoid subshell variable scoping issues with pipes.
+HITS=""
+TMPFILE=$(mktemp 2>/dev/null || echo "/tmp/pre-commit-$$")
+echo "$PROTECTED_PATHS" > "$TMPFILE"
+while IFS= read -r ppath; do
+    [ -z "$ppath" ] && continue
+    if echo "$STAGED" | grep -qF "$ppath"; then
+        HITS="$HITS  - $ppath
+"
+    fi
+done < "$TMPFILE"
+rm -f "$TMPFILE"
+
+if [ -n "$HITS" ]; then
+    echo "WARNING: the following protected files are staged for commit:" >&2
+    printf '%s' "$HITS" >&2
+    echo "" >&2
+    echo "  These files are governance-controlled. CI will block this change" >&2
+    echo "  unless the branch is named governance-changes/*." >&2
+    echo "  See PROTECTED_FILES.md for details." >&2
+    echo "" >&2
+    # Warning only -- do not block.
+fi
+
+exit 0

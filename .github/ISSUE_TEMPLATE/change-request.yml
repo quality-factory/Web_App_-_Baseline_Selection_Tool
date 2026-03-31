@@ -1,0 +1,25 @@
+name: Change Request
+description: Propose new or changed functionality.
+labels: ["change-request"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Functional problem
+      description: What is broken or missing, and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: scenarios
+    attributes:
+      label: Solution scenarios
+      description: Multiple technical approaches with trade-offs. Added during Specification phase.
+    validations:
+      required: false
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommended scenario
+      description: Winning scenario with reasoning. Added during Specification phase.
+    validations:
+      required: false

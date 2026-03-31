@@ -1,0 +1,11 @@
+# Dependabot configuration for GitHub Actions dependency monitoring.
+# Spec: SubscriptionFactory §Dependency and Supply-Chain Security
+#
+# Monitors GitHub Actions for security advisories and version updates.
+# Language-specific dependency monitoring should be added after instantiation.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

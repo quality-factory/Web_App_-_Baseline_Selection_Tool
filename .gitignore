@@ -1,0 +1,15 @@
+# Runtime output artifacts (add project-specific patterns after instantiation)
+outputs/
+
+# Test output artifacts
+test-results-*.xml
+coverage.xml
+
+# General logs
+*.log
+
+# Claude Code project config (machine-local)
+.claude/settings.local.json
+
+# Worktree directories (§Repository Structure Requirements, requirement 10)
+.claude/worktrees/
