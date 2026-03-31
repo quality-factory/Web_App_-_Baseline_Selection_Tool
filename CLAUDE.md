@@ -33,4 +33,4 @@ This is a PHP + JavaScript web application with a Python curation pipeline.
 - `docs/sovereignty-classification.md` — INTERNAL; infrastructure sovereignty assessment
 - Hosting infrastructure: [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18)
 - Privacy statement v2 trigger: [Infra_-_Subscription_Factory#19](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/19)
-- `governance/governance-change-subscriptionfactory-gtc.md` — Applied GT&C governance change (SubscriptionFactory.md v13.4.0)
+- GT&C governance change evidence: `Infra_-_Subscription_Factory/governance/governance-change-subscriptionfactory-gtc.md`
