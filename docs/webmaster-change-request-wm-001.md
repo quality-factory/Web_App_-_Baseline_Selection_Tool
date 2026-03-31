@@ -4,6 +4,7 @@
 **Requestor:** Factory Owner / Human Maintainer
 **Priority:** Required before BST go-live
 **Date:** 2026-03-31
+**Status:** **Superseded** — all changes generalized to cover all factory web apps under `/my/` and tracked in [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18). This file is retained as the original design rationale and technical detail reference.
 
 ---
 
