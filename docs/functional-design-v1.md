@@ -14,7 +14,7 @@
    - [2.1 Usage Governance Policy](#21-usage-governance-policy)
 3. [Functional Context](#3-functional-context)
 4. [Users and User Stories](#4-users-and-user-stories)
-5. [Conceptual Data Model](#5-conceptual-data-model)
+5. [Conceptual Data Model](#5-conceptual-data-model) — attribute catalogue in companion [`data-dictionary-v1`](functional-design_-_data-dictionary-v1.md)
 6. [Subsystem Functional Requirements](#6-subsystem-functional-requirements)
 7. [User Interface Requirements](#7-user-interface-requirements)
 8. [Recommendation Logic](#8-recommendation-logic)
@@ -244,7 +244,7 @@ So that I can assess the basis for every attribute before relying on it in a sel
 ```gherkin
 Given I select a baseline
 When the detail view opens
-Then all 40 attributes are displayed grouped by category,
+Then all 45 attributes are displayed grouped by category,
   each showing value, confidence level, and trust tier
 
 Given I am viewing a baseline detail
@@ -418,7 +418,7 @@ So that I can understand what I am comparing before interpreting values.
 ```gherkin
 Given I navigate to the attribute dictionary
 When the dictionary loads
-Then all 40 attributes are listed alphabetically showing category,
+Then all 45 attributes are listed alphabetically showing category,
   data type, and a one-sentence plain-language definition
 
 Given I select an attribute in the dictionary
@@ -539,7 +539,7 @@ Then the file does not contain attribute data for baselines
 
 ### 5.1 Core entities
 
-**Baseline** — A named security hardening specification issued by an authoritative body, described by 40 attributes.
+**Baseline** — A named security hardening specification issued by an authoritative body, described by 45 attributes.
 
 **Attribute** — A named dimension of comparison across baselines, with definition, data type, objectivity classification, stability, and (for subjective attributes) a scoring rubric.
 
@@ -562,9 +562,9 @@ Then the file does not contain attribute data for baselines
 | Category | Count | Description |
 |---|---|---|
 | Identity & Classification | 6 | What the baseline is, who issues it, and for whom |
-| Platform & Coverage | 4 | Which operating systems and technical domains it addresses |
+| Platform & Coverage | 7 | Which platforms, roles, and scope depths it addresses |
 | Content Quality | 8 | How specific, well-maintained, and well-sourced the content is |
-| Governance & Maintenance | 6 | How the baseline is governed, updated, and reviewed |
+| Governance & Maintenance | 8 | How the baseline is governed, updated, reviewed, and retired |
 | Access & Licensing | 3 | How the baseline can be obtained and used |
 | Format & Parseability | 4 | In what form the baseline is published and whether it is programmatically processable |
 | Tooling & Automation | 5 | What assessment and enforcement tooling exists |
@@ -583,7 +583,25 @@ Then the file does not contain attribute data for baselines
 
 Missing values are never inferred, estimated, or filled with defaults. Every missing value is represented explicitly with a stated reason: paywalled, empirical-only, no source found, disputed, or not applicable. Missing values on high-weight attributes reduce recommendation confidence — they are uncertainty signals, not negative scores.
 
-### 5.5 In-scope baselines — v1
+### 5.5 Attribute catalogue
+
+The complete attribute catalogue — all 45 attributes with stable identifiers, data types, objectivity classifications, enum values, and scoring rubrics — is defined in the companion document [`docs/functional-design_-_data-dictionary-v1.md`](functional-design_-_data-dictionary-v1.md).
+
+The data dictionary is the authoritative source for attribute definitions. Category counts (updated from the original 40-attribute estimate):
+
+| Category | Count | Description |
+|---|---|---|
+| Identity & Classification | 6 | What the baseline is, who issues it, and for whom |
+| Platform & Coverage | 7 | Which platforms, roles, and scope depths it addresses |
+| Content Quality | 8 | How specific, well-maintained, and well-sourced the content is |
+| Governance & Maintenance | 8 | How the baseline is governed, updated, reviewed, and retired |
+| Access & Licensing | 3 | How the baseline can be obtained and used |
+| Format & Parseability | 4 | In what form the baseline is published and whether it is programmatically processable |
+| Tooling & Automation | 5 | What assessment and enforcement tooling exists |
+| Applicability & Adoption | 4 | How widely used the baseline is and what it maps to |
+| **Total** | **45** | |
+
+### 5.6 In-scope baselines — v1
 
 | Baseline | In scope v1 | Access constraint |
 |---|---|---|
@@ -722,7 +740,7 @@ A persistent footer on every page contains: a configurable link to the Factory O
 
 **Hard filters** exclude baselines unconditionally before scoring. Excluded baselines appear in a separate section with reason stated (UC-04b AC3). Triggered by EQ-01 (OS mismatch) and EQ-04 (paid when free required).
 
-**Scoring** applies a weight vector over 40 attributes derived from environment profile answers. Score is the weighted sum of attribute-level compatibility. Weight vector and compatibility mapping are explicit, documented rules — not trained parameters.
+**Scoring** applies a weight vector over 45 attributes derived from environment profile answers. Score is the weighted sum of attribute-level compatibility. Weight vector and compatibility mapping are explicit, documented rules — not trained parameters.
 
 **Confidence adjustment** reduces stated confidence proportionally to missing or inferred values on high-weight attributes. More than three missing high-weight attributes triggers a low-confidence flag (UC-04b AC2).
 

@@ -77,7 +77,7 @@ TC-09 (KB not bulk-downloadable) and TC-10 (rate limiting) both require PHP exec
 
 ### Data storage — S2-A: Single versioned JSON file
 
-The JSON file satisfies all FD functional requirements (FR-K01 through FR-K04) with minimal complexity. Git provides richer version history than any audit table. File size (14 baselines × 40 attributes × provenance ≈ 200–400 KB uncompressed) is acceptable. Combined with PHP-gated serving (S7-B), it meets BC-10. MySQL (S2-B) adds operational overhead not justified by v1 scale. S2-C (split storage) is the natural v2 migration path when tenant and session data are introduced.
+The JSON file satisfies all FD functional requirements (FR-K01 through FR-K04) with minimal complexity. Git provides richer version history than any audit table. File size (14 baselines × 45 attributes × provenance ≈ 200–400 KB uncompressed) is acceptable. Combined with PHP-gated serving (S7-B), it meets BC-10. MySQL (S2-B) adds operational overhead not justified by v1 scale. S2-C (split storage) is the natural v2 migration path when tenant and session data are introduced.
 
 | Scenario | Description | Verdict |
 |---|---|---|
