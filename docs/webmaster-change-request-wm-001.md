@@ -4,7 +4,7 @@
 **Requestor:** Factory Owner / Human Maintainer
 **Priority:** Required before BST go-live
 **Date:** 2026-03-31
-**Status:** **Superseded** — all changes generalized to cover all factory web apps under `/my/` and tracked in [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18). This file is retained as the original design rationale and technical detail reference.
+**Status:** **Scope elevated** — all changes generalized from BST-specific to all factory web apps under `/my/`. Tracked in [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18). This file remains the authoritative technical specification for implementation.
 
 ---
 
@@ -146,7 +146,7 @@ Store the following as WordPress options — not hardcoded:
 
 ## Change 4 — X-Frame-Options Override for BST Path
 
-**Superseded.** This change has been generalized to cover all factory web apps under `/my/` and is now tracked in [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18) (Change 4). The X-Frame-Options DENY header is set once in `httpdocs/my/.htaccess`, not per-app.
+**Scope elevated.** This change has been generalized from BST-specific to all factory web apps under `/my/` and is tracked in [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18) (Change 4). The X-Frame-Options DENY header is set once in `httpdocs/my/.htaccess`, not per-app. The technical detail below remains the implementation reference.
 
 ---
 
@@ -174,7 +174,7 @@ Migration requires DNS record creation by Hosting.nl, a Plesk subdomain with ded
 | 1b | HTTP Basic Auth on `httpdocs/my/bst/` | `httpdocs/my/bst/.htaccess` | Immediately | Temporary — remove when GT&C + popup are live |
 | 2 | GT&C + privacy statement links in footer | WordPress theme/plugin | Before BST go-live | Permanent |
 | 3 | GT&C agree popup with server-side logging | WordPress theme/plugin | Before removing 1b | Permanent |
-| 4 | ~~X-Frame-Options DENY override for BST path~~ | — | — | **Superseded** by [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18) Change 4 (general `/my/` rule) |
+| 4 | X-Frame-Options DENY override | `httpdocs/my/.htaccess` | Before go-live | Permanent — **scope elevated** to all `/my/` apps per [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18) Change 4 |
 
 ---
 
