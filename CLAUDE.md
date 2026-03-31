@@ -31,6 +31,6 @@ This is a PHP + JavaScript web application with a Python curation pipeline.
 - `docs/architecture.md` — Design decisions, component design, data schemas
 - `docs/operations.md` — Deployment pipeline, verification checklist, operational notes
 - `docs/sovereignty-classification.md` — INTERNAL; infrastructure sovereignty assessment
-- `docs/governance-change-privacystatement-v2.md` — Deferred v2 privacy statement trigger
-- Hosting infrastructure changes: [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18)
+- Hosting infrastructure: [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18)
+- Privacy statement v2 trigger: [Infra_-_Subscription_Factory#19](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/19)
 - `governance/governance-change-subscriptionfactory-gtc.md` — Applied GT&C governance change (SubscriptionFactory.md v13.4.0)
