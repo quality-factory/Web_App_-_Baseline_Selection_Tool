@@ -440,7 +440,7 @@ Agents MUST comply with [Factory Spec §Governance Proposer].
 
 In addition, a Governance Proposer:
 
-- MUST produce a structured governance-change proposal containing at minimum: (i) the evidence artifacts read with specific references, (ii) the proposed change classified as addition, modification, or retirement, (iii) for retirements the eval suite result or superseding control that justifies removal, (iv) the affected sections of `AGENTS.md` or the factory specification, and (v) the recommended governance-change workflow branch name.
+- MUST produce a structured governance-change proposal as an issue in the relevant repository's issue register, containing at minimum: (i) the evidence artifacts read with specific references, (ii) the proposed change classified as addition, modification, or retirement, (iii) for retirements the eval suite result or superseding control that justifies removal, (iv) the affected sections of `AGENTS.md` or the factory specification, and (v) the recommended governance-change workflow branch name.
 - MUST NOT implement changes, approve or merge pull requests, or modify any policy or protected file.
 - MUST NOT execute the factory eval suite directly; that function belongs to the Validator when reviewing the resulting governance-change PR.
 - Is explicitly non-authoritative: all proposals are subject to Human Maintainer judgment.
