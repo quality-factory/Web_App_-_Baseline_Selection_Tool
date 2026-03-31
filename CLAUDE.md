@@ -8,7 +8,29 @@ This file provides concise instructions to Claude Code when working in this repo
 
 ## Build, lint, and test commands
 
-<!-- Replace this section with project-specific commands after instantiation. -->
-<!-- See SubscriptionFactory.md §Repository Structure Requirements, requirement 6 for minimum content. -->
+This is a PHP + JavaScript web application with a Python curation pipeline.
 
-No build, lint, or test commands configured yet. Update this section when the project's language and tooling are established.
+### Presentation subsystem (PHP + Alpine.js)
+
+- Deployed to shared hosting (LiteSpeed on Ubuntu 24.04, Plesk-managed) via Plesk webhook on `deploy` branch merge
+- No local build step for the presentation layer
+- Hosting environment reference: `Infra_-_Subscription_Factory/reference/htaccess`
+
+### Curation pipeline (Python)
+
+- Runs locally on the factory laptop
+- No external service dependencies at runtime
+
+## Project overview
+
+**Baseline Selection Tool (BST)** is a web application that helps security practitioners systematically choose hardening baselines for their workstation environments. The tool delivers a curated knowledge base through a browser-based comparison and recommendation interface.
+
+### Key design documents
+
+- `docs/functional-design-v1.md` — What the system does (technology-agnostic)
+- `docs/technical-design-v1.md` — How it is built and deployed
+- `docs/action-plan-v1.md` — Phased implementation plan
+- `docs/sovereignty-classification.md` — INTERNAL; infrastructure sovereignty assessment
+- `docs/webmaster-change-request-wm-001.md` — Hosting environment change request
+- `docs/governance-change-privacystatement-v2.md` — Deferred v2 privacy statement trigger
+- `governance/governance-change-subscriptionfactory-gtc.md` — Applied GT&C governance change (SubscriptionFactory.md v13.4.0)
