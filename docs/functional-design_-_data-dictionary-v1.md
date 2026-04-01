@@ -1,6 +1,6 @@
 # Data Dictionary — Baseline Selection Tool (BST) v1.0
 
-**Status:** Draft — pending Human Maintainer approval
+**Status:** Final — pending Human Maintainer approval
 **Parent document:** [`functional-design-v1.md`](functional-design-v1.md) §5.5
 **Date:** 2026-04-01
 
@@ -153,7 +153,7 @@ Actual URLs are not embedded in this document — they are maintained in the pip
 
 The catalogue defines 45 attributes across 8 categories. Category counts match [`functional-design-v1.md`](functional-design-v1.md) §5.2.
 
-## 7. Collection tier assignment
+## 6. Collection tier assignment
 
 Each attribute's initial collection tier is determined by its Obj/Subj and Obtainability classifications:
 
@@ -162,7 +162,7 @@ Each attribute's initial collection tier is determined by its Obj/Subj and Obtai
 - **Subjective** attributes collected via Tier 2b remain at confidence ceiling Medium regardless of consensus strength, consistent with the Tier 3 policy in functional design §5.3.
 - Attributes requiring paywalled content are recorded as missing with reason `paywalled` regardless of collection method.
 
-## 6. Consistency obligations
+## 7. Consistency obligations
 
 When this catalogue changes:
 
