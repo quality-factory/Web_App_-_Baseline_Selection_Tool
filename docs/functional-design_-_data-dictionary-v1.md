@@ -131,6 +131,15 @@ Attribute selection informed by:
 
 The catalogue defines 45 attributes across 8 categories. Category counts match [`functional-design-v1.md`](functional-design-v1.md) §5.2.
 
+## 7. Collection tier assignment
+
+Each attribute's initial collection tier is determined by its Obj/Subj and Obtainability classifications:
+
+- **Objective + Easy/Moderate** attributes are candidates for Tier 2b (LLM-consensus-extracted) collection. See functional design §5.3 for tier definitions.
+- Objective + Easy attributes collected via Tier 2b may be promoted to Tier 2 (Document-verifiable) after human verification (Horizon 1, Layer 1 per FR-C12).
+- **Subjective** attributes collected via Tier 2b remain at confidence ceiling Medium regardless of consensus strength, consistent with the Tier 3 policy in functional design §5.3.
+- Attributes requiring paywalled content are recorded as missing with reason `paywalled` regardless of collection method.
+
 ## 6. Consistency obligations
 
 When this catalogue changes:

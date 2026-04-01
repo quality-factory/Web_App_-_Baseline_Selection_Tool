@@ -31,6 +31,7 @@
 │  │  Curation Pipeline  [Python]                         │     │
 │  │  ├── Tier 1: automated source parsers               │     │
 │  │  ├── Tier 2: human-assisted retrieval CLI           │     │
+│  │  ├── Tier 2b: multi-model LLM consensus pipeline   │     │
 │  │  ├── Tier 3: analyst scoring CLI (two-pass, 48h)    │     │
 │  │  └── Assembler + validator                          │     │
 │  │  Output: data/baselines.json                        │     │
@@ -164,7 +165,7 @@ S7-A (static file with .htaccess restriction) provides only cosmetic protection 
         "<attribute_id>": {
           "value": "<typed per schema; null if missing>",
           "missing": false,
-          "missing_reason": null,
+          "missing_reason": "paywalled | empirical-only | no source found | disputed | not applicable | consensus-disagreement | null",
           "confidence": "High | Medium | Low",
           "trust_tier": 1,
           "source": {
@@ -173,7 +174,21 @@ S7-A (static file with .htaccess restriction) provides only cosmetic protection 
             "section": "<string>",
             "accessed": "<ISO8601 date>"
           },
-          "collection_method": "automated_parse | human_curation | analyst_scoring | community_aggregation",
+          "llm_provenance": {
+            "models": [
+              {
+                "provider": "<string>",
+                "model_id": "<string>",
+                "model_version": "<string>",
+                "output": "<extracted value or null>",
+                "justification": "<string>"
+              }
+            ],
+            "prompt_version": "<string>",
+            "consensus_reached": true,
+            "agreed_value": "<value or null>"
+          },
+          "collection_method": "automated_parse | human_curation | llm_consensus | analyst_scoring | community_aggregation",
           "curator_id": "<anonymised reference>",
           "review_date": "<ISO8601 date>",
           "ttl_days": 365
@@ -186,6 +201,8 @@ S7-A (static file with .htaccess restriction) provides only cosmetic protection 
 
 The `disclaimer` block is version-controlled alongside the data it accompanies. Any rendering of a recommendation or export reads the disclaimer from this block — not from hardcoded strings.
 
+The `llm_provenance` block is populated only when `collection_method` is `llm_consensus` (Tier 2b). For all other collection methods it is `null`. When `consensus_reached` is `false`, the attribute's `missing` flag is `true` with `missing_reason: "consensus-disagreement"`, and the individual model outputs in `llm_provenance.models` are preserved for Human Maintainer review.
+
 #### Trust tier to collection method mapping
 
 The `collection_method` enum values in the schema correspond to the trust tier model defined in FD §5.3:
@@ -194,6 +211,7 @@ The `collection_method` enum values in the schema correspond to the trust tier m
 |---|---|---|---|
 | 1 | Machine-extractable | `automated_parse` | High |
 | 2 | Document-verifiable | `human_curation` | High |
+| 2b | LLM-consensus-extracted | `llm_consensus` | Medium |
 | 3 | Analyst-scored | `analyst_scoring` | Medium |
 | 4 | Community-aggregated | `community_aggregation` | Low |
 
@@ -246,6 +264,14 @@ Web_App_-_Baseline_Selection_Tool/
 │   │   ├── nist_ncp.py
 │   │   ├── openscap_ssg.py
 │   │   └── microsoft_sct.py
+│   ├── llm_consensus/
+│   │   ├── __init__.py
+│   │   ├── pipeline.py          — orchestrates extraction, consensus, provenance
+│   │   ├── adapters/
+│   │   │   ├── base.py          — abstract adapter interface
+│   │   │   └── ollama.py        — local-first default adapter
+│   │   ├── schema_gen.py        — JSON schema from data dictionary enums/types
+│   │   └── consensus.py         — field-level comparison, majority-rules
 │   ├── retrieval/
 │   │   └── retrieval_cli.py
 │   ├── scorer/
@@ -292,6 +318,7 @@ Web_App_-_Baseline_Selection_Tool/
 | `nist_ncp.py` | Queries NIST NCP REST API for checklist metadata |
 | `openscap_ssg.py` | Reads OpenSCAP/SSG release metadata via GitHub API (unauthenticated) |
 | `microsoft_sct.py` | Downloads and parses Microsoft SCT GPO backup XML |
+| `llm_consensus/` | Tier 2b pipeline: multi-model LLM extraction with local-first adapter (Ollama-compatible), structured output schema generation from data dictionary, majority-rules consensus aggregation, provenance recording. Remote provider adapters added for diversity. |
 | `retrieval_cli.py` | Tier 2 interactive CLI: presents retrieved source passages for curator confirmation |
 | `scoring_cli.py` | Tier 3 interactive CLI: enforces two-pass workflow with minimum 48h gap; fixes confidence at Medium |
 | `assembler.py` | Merges all tier outputs; embeds disclaimer block from canonical source |
