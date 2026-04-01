@@ -2,7 +2,7 @@
 
 **Status:** Final — pending Human Maintainer approval
 **Scope:** Phase a — baseline selection and comparison
-**Factory alignment:** SubscriptionFactory.md v13.3.0
+**Factory alignment:** SubscriptionFactory.md v13.5.0
 **Date:** 2026-03-31
 
 ---
@@ -29,9 +29,9 @@
 
 ### 1.1 What this document covers
 
-This functional design specifies the Baseline Selection Tool (BST) v1 — a web-based application that helps users select an appropriate security hardening baseline for their workstation environment. It defines what the system must do, for whom, and under which constraints, expressed entirely in functional terms. It does not specify how the system achieves this; those decisions are in the companion Technical Design document.
+This functional design specifies the Baseline Selection Tool (BST) v1 — a web-based application that helps users select an appropriate security hardening baseline for their workstation environment. It defines what the system must do, for whom, and under which constraints, expressed entirely in functional terms. It does not specify how the system achieves this; those decisions are in the companion [`architecture.md`](architecture.md).
 
-This document is technology-agnostic. It remains valid regardless of which technical scenario the Technical Design selects.
+This document is technology-agnostic. It remains valid regardless of which technical scenario the architecture selects.
 
 ### 1.2 Problem statement
 
@@ -53,7 +53,7 @@ This FD covers phase a (baseline selection) only. Phase b (guidance integration)
 
 The BST is a commercially developed and maintained tool representing a significant investment of time and expertise. This document governs two categories of business risk as first-class design requirements: intellectual property extraction and legal liability. See §2.1.
 
-The Factory Owner's General Terms and Conditions (GT&C) are currently in preparation. This is an accepted, bounded risk: the risk does not materially exist while the BST remains non-public. The go-live gate in §12 formalises the condition under which this risk is closed. See §10.6 for the legal review requirements.
+GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §12. Legal review requirements: see §10.6.
 
 ---
 
@@ -388,13 +388,8 @@ Then the results update to reflect the revised environment profile
 
 Given I am viewing wizard results
 When the recommendation is displayed
-Then a mandatory disclaimer is shown as an integral, non-collapsible
-  part of the results stating:
-  (a) the BST is not a professional security advisory service,
-  (b) the knowledge base version and generation date,
-  (c) the recommendation is based solely on the environment profile provided,
-  (d) the user is solely responsible for independent validation,
-  (e) the Factory Owner accepts no liability for outcomes
+Then the mandatory disclaimer per §2.1.2 is shown as an integral,
+  non-collapsible part of the results
 
 Given I am viewing wizard results
 When I read the recommendation text
@@ -585,21 +580,9 @@ Missing values are never inferred, estimated, or filled with defaults. Every mis
 
 ### 5.5 Attribute catalogue
 
-The complete attribute catalogue — all 45 attributes with stable identifiers, data types, objectivity classifications, enum values, and scoring rubrics — is defined in the companion document [`docs/functional-design_-_data-dictionary-v1.md`](functional-design_-_data-dictionary-v1.md).
+The complete attribute catalogue — all 45 attributes with stable identifiers, data types, objectivity classifications, enum values, and scoring rubrics — is defined in the companion document [`data-dictionary-v1`](functional-design_-_data-dictionary-v1.md).
 
-The data dictionary is the authoritative source for attribute definitions. Category counts (updated from the original 40-attribute estimate):
-
-| Category | Count | Description |
-|---|---|---|
-| Identity & Classification | 6 | What the baseline is, who issues it, and for whom |
-| Platform & Coverage | 7 | Which platforms, roles, and scope depths it addresses |
-| Content Quality | 8 | How specific, well-maintained, and well-sourced the content is |
-| Governance & Maintenance | 8 | How the baseline is governed, updated, reviewed, and retired |
-| Access & Licensing | 3 | How the baseline can be obtained and used |
-| Format & Parseability | 4 | In what form the baseline is published and whether it is programmatically processable |
-| Tooling & Automation | 5 | What assessment and enforcement tooling exists |
-| Applicability & Adoption | 4 | How widely used the baseline is and what it maps to |
-| **Total** | **45** | |
+The data dictionary is the authoritative source for attribute definitions. Category counts and descriptions: see §5.2.
 
 ### 5.6 In-scope baselines — v1
 
@@ -666,7 +649,7 @@ The data dictionary is the authoritative source for attribute definitions. Categ
 
 **FR-P07** Operable on the factory's existing shared hosting environment without infrastructure changes.
 
-**FR-P08** Mandatory disclaimer on every recommendation output (UC-04b). Integral, non-collapsible. Content defined in §2.1.2. The Disclaimer is a first-class component of the Recommendation entity.
+**FR-P08** Mandatory disclaimer per §2.1.2 on every recommendation output (UC-04b). Integral, non-collapsible. The Disclaimer is a first-class component of the Recommendation entity.
 
 **FR-P09** Knowledge base not exposed as a directly accessible or bulk-downloadable resource. No single user action retrieves the complete dataset. Exports scoped to the generating view's result set only.
 
@@ -706,7 +689,7 @@ Accepts two to four baselines. Baseline selection possible without leaving the v
 
 ### 7.5 Selection wizard (UC-04a, UC-04b, UC-06a, UC-06b)
 
-Sequential question flow (UC-04a) followed by results view (UC-04b). Transition requires no navigation away. The mandatory disclaimer (FR-P08) appears as a visually prominent, integral part of results — not below the fold, not collapsible. Ranked list and exclusion list are visually separated. Path from results to comparison view is a single action. Export actions reachable from results.
+Sequential question flow (UC-04a) followed by results view (UC-04b). Transition requires no navigation away. The mandatory disclaimer per FR-P08 appears as a visually prominent, integral part of results — not below the fold, not collapsible. Ranked list and exclusion list are visually separated. Path from results to comparison view is a single action. Export actions reachable from results.
 
 ### 7.6 Attribute dictionary (UC-05)
 
@@ -714,7 +697,7 @@ Alphabetically ordered. Full rubric for subjective attributes visible without a 
 
 ### 7.7 Export (UC-06a, UC-06b)
 
-Available from comparison view and wizard results. Two formats presented as distinct, labelled actions. Print stylesheet for UC-06a suppresses interactive elements and navigation chrome but retains attribution and disclaimer. Markdown file for UC-06b named descriptively with export date, carries attribution and disclaimer, does not require renaming for governance use.
+Available from comparison view and wizard results. Two formats presented as distinct, labelled actions. Print stylesheet for UC-06a suppresses interactive elements and navigation chrome but retains the content required by FR-P11. Markdown file for UC-06b named descriptively with export date, carries the content required by FR-P11, does not require renaming for governance use.
 
 ### 7.8 Footer (FR-P15)
 
@@ -749,7 +732,7 @@ A persistent footer on every page contains: a configurable link to the Factory O
 Every recommendation includes:
 
 1. A plain-language explanation of ranking, key influencing attributes, and uncertainty signals.
-2. A mandatory Disclaimer (§2.1.2) as an integral, non-collapsible part of the output. The Disclaimer is part of the Recommendation entity and must be present in every rendering, including exports.
+2. The mandatory Disclaimer per §2.1.2 and FR-P08.
 3. The knowledge base version and generation date.
 4. An explicit statement of what factors were NOT considered — factors outside the seven wizard questions are not reflected in the recommendation.
 
@@ -789,8 +772,7 @@ In v1, only one tenant exists: the factory itself. No tenant management, authent
 - Knowledge base contains no secrets, credentials, or PII.
 - Standard web security headers enforced including CSP and transport security.
 - Curation subsystem complies with all applicable factory security policies.
-- Server-side rate limiting per FR-P12.
-- robots.txt per FR-P13.
+- IP and agentic access protections per §2.1.3, FR-P12, FR-P13.
 
 ### 10.3 Sovereignty
 
@@ -801,17 +783,17 @@ In v1, only one tenant exists: the factory itself. No tenant management, authent
 
 - A single person can update the knowledge base, verify correctness, and deploy without assistance.
 - Staleness detection requires no manual inspection.
-- Disclaimer text (§2.1.2) maintained in a single location and referenced wherever rendered — not duplicated across templates.
+- Disclaimer text maintained in a single location per §2.1.2 and referenced wherever rendered.
 
 ### 10.5 Auditability
 
 - Every displayed value is traceable to its source through the provenance record.
 - Every recommendation is reproducible: same knowledge base version + same environment profile = same recommendation.
-- Knowledge base version and generation date visible on every data-presenting view.
+- Knowledge base version and generation date visibility per FR-P14.
 
 ### 10.6 Legal and compliance
 
-- The GT&C is currently in preparation. This is an accepted risk contingent on the BST remaining non-public. See §12 (go-live gate).
+- GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §12. Tracked as [Infra_-_Subscription_Factory#17](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/17).
 - Before go-live, the GT&C liability limitation clause must be reviewed for compliance with Dutch commercial law (Boek 6 BW) — specifically: reasonableness of the limitation (Art. 6:248 BW), and whether intentional acts or gross negligence carve-outs are required. EU consumer protection law (Directive 93/13/EEC) does not apply to the B2B-only client base.
 - GT&C version must be tracked. Changes to the GT&C that affect user rights trigger a new acceptance event requirement.
 - The disclaimer text (§2.1.2) must be reviewed for legal adequacy before go-live. It is not a substitute for the GT&C.
@@ -828,7 +810,7 @@ All open functional decisions from the design phase are resolved. This section s
 | OFD-02 — Value challenge mechanism | GitHub issue pre-filled link. In scope for v1. | UC-02 AC6, §7.3 |
 | OFD-03 — Export format scope | Both UC-06a (PDF) and UC-06b (markdown) in v1. | UC-06a, UC-06b |
 | OFD-04 — Access control gate in v1 | IP-based acceptance log in v1 (no application-level auth required); legally grounded under privacy statement §8.2.1. HTTP Basic Auth on BST URL while GT&C is in preparation. Per-user forensic log in v2. | FR-P16, §9.3, §12 go-live gate |
-| OFD-05 — Knowledge base serving mechanism | PHP-gated endpoint (S7-B). Direct static file URL blocked. Requires S1-B (PHP thin layer) in the TD — confirmed. | FR-P09, TD §8 |
+| OFD-05 — Knowledge base serving mechanism | PHP-gated endpoint (S7-B). Direct static file URL blocked. Requires S1-B (PHP thin layer) — confirmed in [`architecture.md`](architecture.md) §Knowledge base serving. | FR-P09 |
 
 ---
 
@@ -860,5 +842,4 @@ Until these conditions are met, HTTP Basic Auth remains in place as the access g
 ---
 
 *End of Functional Design — BST v1.0*
-*Companion document: Technical Design — BST v1.0*
-*Next step: Clarifier requirements artifact → Author Phase 1 spec*
+*Companion documents: [`architecture.md`](architecture.md), [`operations.md`](operations.md), [`data-dictionary-v1`](functional-design_-_data-dictionary-v1.md)*

@@ -1,7 +1,6 @@
 <!-- Audience: developers, automation agents -->
 <!-- Scope: system overview, module layout, design decisions, capability model -->
-<!-- Source: dissolved from technical-design-bst-v1.md (2026-03-31) -->
-<!-- Factory alignment: SubscriptionFactory.md v13.4.0 -->
+<!-- Factory alignment: SubscriptionFactory.md v13.5.0 -->
 <!-- Input document: docs/functional-design-v1.md -->
 
 # Architecture
@@ -146,11 +145,10 @@ S7-A (static file with .htaccess restriction) provides only cosmetic protection 
       "attribute_id": "<stable slug>",
       "label": "<human-readable name>",
       "category": "<one of 8 categories>",
-      "data_type": "Boolean | Enum | Date | Integer | Free text | URL",
+      "data_type": "Boolean | Enum | Enum (multi) | Date | Integer | Free text | Free text (list)",
       "objective_subjective": "Objective | Subjective",
-      "stability": "Static | Per release | Annual | Continuous",
+      "stability": "Static | Per release | Continuous",
       "obtainability": "Easy | Moderate | Difficult",
-      "primary_source_type": "<string>",
       "enum_values": [{ "value": "<string>", "definition": "<string>" }],
       "rubric": "<scoring rubric for Tier 3 attributes; null otherwise>"
     }
@@ -167,7 +165,7 @@ S7-A (static file with .htaccess restriction) provides only cosmetic protection 
           "value": "<typed per schema; null if missing>",
           "missing": false,
           "missing_reason": null,
-          "confidence": "High | Medium | Low | Inferred",
+          "confidence": "High | Medium | Low",
           "trust_tier": 1,
           "source": {
             "url": "<string>",
@@ -187,6 +185,17 @@ S7-A (static file with .htaccess restriction) provides only cosmetic protection 
 ```
 
 The `disclaimer` block is version-controlled alongside the data it accompanies. Any rendering of a recommendation or export reads the disclaimer from this block — not from hardcoded strings.
+
+#### Trust tier to collection method mapping
+
+The `collection_method` enum values in the schema correspond to the trust tier model defined in FD §5.3:
+
+| Trust tier | FD §5.3 name | Schema `collection_method` | Confidence ceiling |
+|---|---|---|---|
+| 1 | Machine-extractable | `automated_parse` | High |
+| 2 | Document-verifiable | `human_curation` | High |
+| 3 | Analyst-scored | `analyst_scoring` | Medium |
+| 4 | Community-aggregated | `community_aggregation` | Low |
 
 ### Stale attributes report schema
 
@@ -264,9 +273,10 @@ Web_App_-_Baseline_Selection_Tool/
 │   └── .htaccess               — SPA routing; blocks /data/ direct access
 ├── tests/                      — pytest
 ├── docs/
+│   ├── functional-design-v1.md — what the system does (technology-agnostic)
+│   ├── functional-design_-_data-dictionary-v1.md — attribute catalogue
 │   ├── architecture.md         — this file
-│   ├── operations.md
-│   └── xla.md
+│   └── operations.md
 ├── governance/
 └── CLAUDE.md
 ```
@@ -345,26 +355,37 @@ robots.txt is advisory; rate limiting is the enforcement layer.
 
 ### Disclaimer handling
 
-The disclaimer text is read from the `disclaimer` block in `baselines.json` at startup. `app.js` must:
+Disclaimer behavioral requirements are defined in FR-P08 and FR-P11. `app.js` implements these by reading the `disclaimer` block from `baselines.json` at startup. Disclaimer text is sourced exclusively from the knowledge base — not hardcoded — so updates flow through the standard curation and deployment pipeline without code changes.
 
-1. Extract disclaimer on load.
-2. Render disclaimer as a non-removable, non-collapsible component in recommendation results.
-3. Inject disclaimer into all print (UC-06a) and markdown (UC-06b) exports.
-4. Never render a recommendation without the accompanying disclaimer.
+### Recommendation engine
 
-Disclaimer text is sourced exclusively from the knowledge base — not hardcoded — so updates flow through the standard curation and deployment pipeline without code changes.
+Implements FD §8 (environment profile questions, hard filters, weighted scoring, confidence adjustment). All recommendation logic executes client-side in `app.js`.
+
+**Weight vector storage** — The weight vector and compatibility mapping are defined as a static configuration object within `app.js`. They are explicit, documented rules — not trained parameters (FD §8.2). The vector covers all 45 attributes; environment profile answers (EQ-01 through EQ-07) select which weight profile applies.
+
+**Hard filters** — EQ-01 (OS mismatch) and EQ-04 (paid when free required) exclude baselines before scoring. Excluded baselines are retained in a separate array for the exclusion list (UC-04b AC3).
+
+**Scoring** — Weighted sum of attribute-level compatibility scores. Each attribute's compatibility is computed from its value against the environment profile. Missing values contribute zero to the score but increment the missing-count for the confidence adjustment.
+
+**Confidence adjustment** — Missing or low-confidence values on high-weight attributes reduce the recommendation's stated confidence. More than three missing high-weight attributes triggers a low-confidence flag (UC-04b AC2).
+
+**Determinism** — Same `baselines.json` version + same environment profile answers = same ranked output. No randomness, no external data, no session state.
+
+**Multi-tenancy provision** — The engine reads `tenant_id` from the knowledge base `meta` block but does not filter by it in v1 (single tenant). When a second tenant is added (§9.3), the engine filters baselines by tenant before scoring — no structural change required.
 
 ## Sovereignty Classification
 
 | Component | Provider | Classification | Exit strategy |
 |---|---|---|---|
-| Shared hosting | See `docs/sovereignty-classification.md` | Pending | Required if class (b) |
+| Shared hosting | Pending classification | Pending | Required if class (b) |
 | GitHub (source control, CI) | Microsoft (US) | (b) Tolerable with exit strategy | Git distributed; full local copy always available; CI workflows portable YAML |
 | GitHub Actions (CI) | Microsoft (US) | (b) Tolerable with exit strategy | Workflow definitions portable to GitLab CI, Forgejo, or equivalent |
 
-Factory-wide sovereignty classifications: SubscriptionFactory.md §Production Enabler Inventory.
+Factory-wide sovereignty taxonomy and classifications: SubscriptionFactory.md §Operational Constraints #5 and §Production Enabler Inventory.
 
 ## Open Technical Decisions
+
+Architecture-scoped decisions are tracked here. Operational decisions are tracked in [`operations.md`](operations.md) §Operational decisions.
 
 | # | Decision | Status |
 |---|---|---|
@@ -372,4 +393,4 @@ Factory-wide sovereignty classifications: SubscriptionFactory.md §Production En
 | OTD-02 | Alpine.js version pinning | Pin to a specific release before implementation. |
 | OTD-03 | GitHub API authentication for SSG parser | Unauthenticated rate limit (60 req/hr) sufficient for manual curation. Add token if pipeline is run frequently. |
 | OTD-04 | CIS PDF parsing approach | Free CIS PDF is not machine-readable. Tier 1 limited to metadata visible in PDF structure. Full attribute coverage requires Tier 2. Accepted constraint. |
-| OTD-06 | Export format implementation | Both UC-06a and UC-06b confirmed in v1. Print CSS for UC-06a; JS file generation for UC-06b. |
+| OTD-05 | Export format implementation | Both UC-06a and UC-06b confirmed in v1. Print CSS for UC-06a; JS file generation for UC-06b. |

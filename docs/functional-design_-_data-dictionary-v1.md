@@ -1,7 +1,7 @@
 # Data Dictionary — Baseline Selection Tool (BST) v1.0
 
 **Status:** Draft — pending Human Maintainer approval
-**Parent document:** `docs/functional-design-v1.md` §5.5
+**Parent document:** [`functional-design-v1.md`](functional-design-v1.md) §5.5
 **Date:** 2026-04-01
 
 ---
@@ -10,7 +10,7 @@
 
 This document defines the complete attribute catalogue for the BST knowledge base. Each attribute represents a named dimension of comparison across security hardening baselines. Together, the attributes form the data model that powers browsing, filtering, comparison, and recommendation.
 
-This is the authoritative source for attribute definitions. The knowledge base schema in `docs/architecture.md` implements this catalogue as the `attribute_schema` array in `data/baselines.json`.
+This is the authoritative source for attribute definitions. The knowledge base schema in [`architecture.md`](architecture.md) implements this catalogue as the `attribute_schema` array in `data/baselines.json`.
 
 ## 2. Attribute structure
 
@@ -65,8 +65,6 @@ Attribute selection informed by:
 | 12 | `prescriptiveness` | Level of prescriptiveness | Enum | Subjective | Per release | Moderate | `per_setting` — specifies exact setting paths and values (e.g., registry keys, sysctl parameters); `per_control` — specifies controls but not exact settings; `principle_level` — specifies goals and strategies without implementation detail. **Rubric:** Per-setting = every recommendation includes a verifiable machine-state assertion. Per-control = recommendations describe what to achieve but not the specific setting. Principle-level = recommendations are outcome statements without technical specificity. |
 | 13 | `version_granularity` | Version targeting granularity | Enum | Objective | Static | Easy | `per_build` — separate baseline per OS build/feature update (e.g., Microsoft SCT per Windows semi-annual release); `per_major_version` — one baseline per OS major version (e.g., CIS per Windows 11); `per_os_family` — one baseline per OS family (e.g., ANSSI GNU/Linux guide); `version_agnostic` — not tied to a specific version (e.g., ACSC Essential Eight) |
 
-Note: Platform & Coverage expanded from the original 4 to 7 attributes. The original count underrepresented the multi-dimensional nature of scope, which is the primary filtering axis for practitioners. Evidence: every baseline family surveyed uses at least three scope axes (platform, role, depth).
-
 ### 4.3 Content Quality (8 attributes)
 
 | # | attribute_id | Label | Data type | Obj/Subj | Stability | Obtainability | Enum values / Rubric |
@@ -92,8 +90,6 @@ Note: Platform & Coverage expanded from the original 4 to 7 attributes. The orig
 | 27 | `reviewer_diversity` | Reviewer/author diversity | Enum | Subjective | Static | Difficult | `multi_stakeholder` — reviewers from multiple independent organisations (e.g., CIS volunteer community); `single_org_multi_team` — multiple teams within one organisation (e.g., DISA field offices); `single_team` — authored and reviewed by same team; `unknown` — reviewer composition not publicly documented. **Rubric:** Based on published contributor lists, acknowledgement sections, or process documentation. |
 | 28 | `errata_process` | Formal errata/correction process | Enum | Objective | Static | Moderate | `formal_published` — dedicated errata notices or revision notes documenting corrections; `inline_revision` — corrections folded into next regular release without separate errata; `unknown` — process not publicly documented |
 | 29 | `retirement_process` | End-of-life / retirement process | Enum | Objective | Static | Moderate | `explicit_eol` — published sunset dates or end-of-support declarations (e.g., DISA STIG Sunset list); `implicit_abandonment` — no update for 2+ years without formal retirement; `not_applicable` — framework is version-agnostic; `unknown` — no retirement information published |
-
-Note: Governance & Maintenance expanded from the original 6 to 8 attributes. The original count underrepresented data quality signals (changelog transparency, reviewer diversity, errata handling, retirement process) that practitioners identified as critical trust indicators.
 
 ### 4.5 Access & Licensing (3 attributes)
 
@@ -131,31 +127,16 @@ Note: Governance & Maintenance expanded from the original 6 to 8 attributes. The
 | 44 | `adoption_breadth` | Estimated adoption breadth | Enum | Subjective | Continuous | Difficult | `widespread` — de facto standard in its domain, adopted across industries and geographies; `sector_standard` — standard within a specific sector or jurisdiction (e.g., DISA STIG in US DoD, IT-Grundschutz in German KRITIS); `niche` — limited adoption, typically regional or community-specific; `emerging` — recently published, adoption trajectory unclear. **Rubric:** Based on: (1) number of third-party tools that natively support the baseline, (2) frequency of citation in compliance documentation, (3) geographical breadth of adoption. Two independent scoring passes, 48h apart. |
 | 45 | `cross_baseline_mapping` | Published mapping to other baselines | Free text (list) | Objective | Per release | Moderate | List of baselines to which the publisher provides an explicit mapping or crosswalk (e.g., CIS publishes a STIG profile; Microsoft documents SCT-to-STIG alignment; ComplianceAsCode implements CIS, STIG, and ANSSI profiles in a single toolchain) |
 
-## 5. Attribute count reconciliation
+## 5. Attribute count summary
 
-The catalogue defines 45 attributes across 8 categories. The original estimate of 40 in the functional design was a planning approximation. The increase is driven by:
-
-- **Platform & Coverage**: expanded from 4 to 7 (+3) to capture scope depth, composability, prescriptiveness, and version granularity — the primary filtering axes that every surveyed source uses.
-- **Governance & Maintenance**: expanded from 6 to 8 (+2) to capture data quality signals (changelog transparency, reviewer diversity, errata handling, retirement process) that practitioners identified as critical trust indicators.
-
-| Category | Original count | Final count | Change |
-|---|---|---|---|
-| Identity & Classification | 6 | 6 | — |
-| Platform & Coverage | 4 | 7 | +3 |
-| Content Quality | 8 | 8 | — |
-| Governance & Maintenance | 6 | 8 | +2 |
-| Access & Licensing | 3 | 3 | — |
-| Format & Parseability | 4 | 4 | — |
-| Tooling & Automation | 5 | 5 | — |
-| Applicability & Adoption | 4 | 4 | — |
-| **Total** | **40** | **45** | **+5** |
+The catalogue defines 45 attributes across 8 categories. Category counts match [`functional-design-v1.md`](functional-design-v1.md) §5.2.
 
 ## 6. Consistency obligations
 
 When this catalogue changes:
 
-1. The `attribute_schema` array in `docs/architecture.md` §Knowledge base schema MUST be updated to match.
+1. The `attribute_schema` array in [`architecture.md`](architecture.md) §Knowledge base schema MUST be updated to match.
 2. The `data/baselines.schema.json` validation schema MUST be updated to match.
-3. The category counts in `docs/functional-design-v1.md` §5.2 MUST be updated to match.
-4. The "40 attributes" references throughout the functional design MUST be updated to reflect the actual count.
-5. The environment profile weight vector in `docs/functional-design-v1.md` §8.2 MUST cover all attributes.
+3. The category counts in [`functional-design-v1.md`](functional-design-v1.md) §5.2 MUST be updated to match.
+4. The attribute count references throughout the functional design MUST be updated to reflect the actual count.
+5. The environment profile weight vector in [`functional-design-v1.md`](functional-design-v1.md) §8.2 MUST cover all attributes.
