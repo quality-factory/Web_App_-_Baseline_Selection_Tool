@@ -385,6 +385,28 @@ Crawl-delay: 10
 
 robots.txt is advisory; rate limiting is the enforcement layer.
 
+### HTTP API contract — `api/baselines.php`
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/baselines.php` | Returns the knowledge base content |
+
+**Request** — No parameters. No request body.
+
+**Response — 200 OK:**
+- Body: contents of `data/baselines.json` (application/json)
+- Headers: `Content-Type: application/json; charset=utf-8`, security headers per §Security headers, `Cache-Control: public, max-age=3600` (KB is static between deployments)
+
+**Error responses:**
+
+| Status | Condition | Body |
+|---|---|---|
+| 429 Too Many Requests | Per-IP rate limit exceeded | `{"error": "rate_limit_exceeded"}` with `Retry-After` header |
+| 403 Forbidden | Known bot user-agent detected | `{"error": "forbidden"}` |
+| 500 Internal Server Error | `baselines.json` unreadable or missing | `{"error": "internal_error"}` (no implementation details exposed) |
+
+The endpoint does not accept query parameters for filtering or pagination. The full knowledge base is served per request — the dataset size (~200–400 KB) is within acceptable bounds for v1.
+
 ### Disclaimer handling
 
 Disclaimer behavioral requirements are defined in FR-P08 and FR-P11. `app.js` implements these by reading the `disclaimer` block from `baselines.json` at startup. Disclaimer text is sourced exclusively from the knowledge base — not hardcoded — so updates flow through the standard curation and deployment pipeline without code changes.
@@ -489,6 +511,54 @@ This supports incremental runs (re-process a single baseline) without affecting 
 ### `curator_id` for Tier 2b
 
 For LLM consensus extraction, `curator_id` is set to `llm_consensus/<prompt_version>`, where `<prompt_version>` is the prompt content hash defined above. This traces each attribute value to the exact pipeline configuration that produced it.
+
+## Failure-Mode Inventory
+
+Enumerated failure modes across all subsystems with detection, impact, and mitigation.
+
+### Curation subsystem
+
+| # | Failure mode | Detection | Impact | Mitigation |
+|---|---|---|---|---|
+| FM-C01 | LLM API unreachable (network error, service down) | Adapter raises connection error | Pipeline cannot extract attributes for affected model | Adapter catches connection errors, logs model as excluded. Pipeline continues if ≥2 models remain; aborts with actionable error if <2 (per degradation rules §Tier 2b pipeline design). |
+| FM-C02 | LLM returns malformed structured output | JSON schema validation failure after parsing | Model output unusable for consensus | One retry per FR-C08(c). On second failure, model excluded with `structured-output-failure` justification. Pipeline continues per degradation rules. |
+| FM-C03 | LLM cites URL not in primary source manifest | URL validation against `sources.json` allowlist | Potential hallucination accepted as fact | Pipeline rejects any URL not in the manifest per FR-C10. Attribute value from that model for that field is treated as invalid for consensus purposes. |
+| FM-C04 | Fewer than 2 models qualify (structured output check) | Model qualification check at pipeline startup | Pipeline cannot produce consensus output | Pipeline aborts before extraction with actionable error listing which models failed and why. No partial output written. |
+| FM-C05 | Consensus disagreement on many/all attributes | Consensus aggregation finds <2-of-3 agreement | Baseline entry has many missing values | Values recorded as missing with reason `consensus-disagreement`. Provenance preserves individual model outputs for HM review. Pipeline continues — sparse output is valid. |
+| FM-C06 | Primary source URL returns 404 or has moved | HTTP error during source retrieval (Tier 1) or LLM reports inability to access source | Stale or missing attribute values | Tier 1 parsers report retrieval failures per attribute. For Tier 2b, LLMs are instructed to report inaccessible sources. HM verifies source manifest URLs before each run (per operations.md). |
+| FM-C07 | Schema validation failure on assembled output | Validator rejects merged `baselines.json` | Invalid KB not written to `data/` | Validator aborts with human-readable explanation per FR-C05. Previous valid `baselines.json` is preserved. |
+| FM-C08 | Pipeline interrupted mid-run (crash, Ctrl+C) | Process termination | Partial intermediate files in staging directory | Assembler reads from staging directory; incomplete files are detected by schema validation. Staging directory is cleaned on next run. `data/baselines.json` is only written after successful validation — no partial writes. |
+| FM-C09 | LLM API key invalid or expired (remote providers) | HTTP 401/403 from provider API | Remote model unavailable | Adapter catches auth errors, logs model as excluded with reason. Pipeline continues per degradation rules. Key re-entry via interactive prompt on next run. |
+
+### Knowledge store
+
+| # | Failure mode | Detection | Impact | Mitigation |
+|---|---|---|---|---|
+| FM-K01 | `baselines.json` corrupted or truncated | JSON parse failure in validator or PHP endpoint | KB unreadable | Validator catches parse errors and rejects the file. PHP endpoint returns 500 (not a partial response). Git history provides recovery to any prior valid state. |
+| FM-K02 | Schema drift between data dictionary and `baselines.json` | CI schema validation step; validator rejects non-conformant files | Attributes missing from schema or unknown attributes present | Data dictionary §7 consistency obligations require synchronized updates. CI enforces schema match before merge. |
+| FM-K03 | All attribute TTLs expired (stale knowledge base) | Staleness report in CI (advisory); all `days_overdue > 0` | Knowledge base may contain outdated values | CI emits advisory warning (not blocking). FR-P14 ensures KB version and generation date are visible to users. HM decides when to re-run pipeline. |
+
+### Presentation subsystem
+
+| # | Failure mode | Detection | Impact | Mitigation |
+|---|---|---|---|---|
+| FM-P01 | `baselines.json` fails to load (PHP error, file missing) | `app.js` fetch returns non-200 or unparseable response | Application displays no baseline data | `app.js` displays a user-facing error message with the HTTP status. No fallback data — blank state with explanation is safer than stale data. |
+| FM-P02 | `baselines.json` is valid but contains zero baselines | `baselines` array is empty after parsing | All views are empty | `app.js` displays "No baselines available" with KB version/date. Not an error — this is a valid state during initial development. |
+| FM-P03 | Rate limit exceeded by legitimate user | HTTP 429 returned by PHP rate limiter | User temporarily blocked from KB access | 429 response includes `Retry-After` header. `app.js` displays a user-friendly message with the retry delay. Rate limits are tuned for normal human browsing cadence. |
+| FM-P04 | APCu unavailable on shared hosting | Runtime check for APCu extension | File-based rate limiting less performant | PHP falls back to file-based counters (OTD-06). Rate limiting remains functional; only performance characteristics change. |
+| FM-P05 | GT&C acceptance log write fails (disk full, permissions) | PHP `error_log` or write operation returns failure | Acceptance event not recorded | Log write uses fail-safe mechanism per AGENTS.md §Operational transparency. Write failure is logged to PHP error log but does not block user access — logging is important but not a gating function. Accepted residual risk: some acceptance events may be lost. |
+| FM-P06 | Browser does not support Alpine.js | Alpine.js requires ES6+ (all modern browsers) | Application non-functional | Alpine.js minimum: Chrome 61+, Firefox 60+, Safari 11+, Edge 16+. No polyfill — these versions cover >98% of active browsers. Unsupported browsers see the static HTML shell without interactivity. |
+| FM-P07 | Print stylesheet renders differently across browsers | Visual inspection during deployment verification | PDF export (UC-06a) layout varies | Print stylesheet tested against Chrome and Firefox (dominant print engines). Disclaimer presence is CSS-enforced (`display: block !important` in print media query) — layout may vary but content completeness is guaranteed. |
+| FM-P08 | Markdown export encoding issues | User reports garbled characters | Downloaded `.md` file displays incorrectly | Export sets `charset=utf-8` in the download blob. `baselines.json` is UTF-8 by schema. No transcoding occurs. |
+
+### Deployment
+
+| # | Failure mode | Detection | Impact | Mitigation |
+|---|---|---|---|---|
+| FM-D01 | Plesk webhook fails (hosting outage, webhook misconfiguration) | Deployment verification checklist fails | `deploy` branch updated but hosting not refreshed | HM runs verification checklist after every deployment. Manual deployment via Plesk UI is the fallback. |
+| FM-D02 | `deploy` branch merged with invalid `baselines.json` | CI should catch this on `main` before merge to `deploy` | Broken KB deployed to production | CI validates `baselines.json` schema on every PR to `main`. The `deploy` branch only receives merges from `main` — never direct pushes. Two-gate protection. |
+| FM-D03 | `.htaccess` misconfiguration (SPA routing broken, data/ exposed) | Deployment verification checklist: direct `data/baselines.json` URL test | Either SPA navigation breaks or KB becomes directly downloadable | Verification checklist includes explicit tests for both conditions. `.htaccess` is version-controlled and reviewed in PR. |
+| FM-D04 | Security headers missing or duplicated | Deployment verification checklist: response header inspection | Reduced security posture or browser rejection of duplicate headers | Verification checklist tests for exactly one `X-Frame-Options: DENY` header (not duplicated with SAMEORIGIN from hosting defaults). CSP header presence verified. |
 
 ## Open Technical Decisions
 
