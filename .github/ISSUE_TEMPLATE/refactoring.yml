@@ -1,37 +1,26 @@
-name: Bug
-description: Report existing functionality that is broken or degraded.
-labels: ["bug"]
+name: Refactoring
+description: Improve technical design without changing functional behavior.
+labels: ["refactoring"]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Functional problem
-      description: What is broken or degraded? Include steps to reproduce if applicable.
+      label: Technical problem
+      description: What technical debt or design issue is being addressed? Why does it matter now?
     validations:
       required: true
   - type: textarea
-    id: environment
+    id: behavioral-invariant
     attributes:
-      label: Environment
-      description: Where does this occur?
-      placeholder: |
-        - OS:
-        - Runtime version:
-        - Passes in CI: yes / no
-    validations:
-      required: false
-  - type: textarea
-    id: likely-cause
-    attributes:
-      label: Likely root cause
-      description: If known, describe the suspected cause.
+      label: Behavioral invariant
+      description: Confirm which functional behavior remains unchanged. Reference existing tests that prove it.
     validations:
       required: false
   - type: textarea
     id: workflow
     attributes:
       label: Workflow checklist
-      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Bugs may skip statuses 2–6 when the fix is self-evident (HM documents skip rationale). Items marked (CR only) or (CR/Refactoring) are skipped for bugs."
+      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Refactoring skips statuses 2–3 (functional design unchanged)."
       value: |
         ### 1. Triage intake
         - [ ] 1a. Problem statement written
@@ -40,20 +29,26 @@ body:
         - [ ] 1d. Priority set
 
         ### 2. Design function
-        - [ ] 2h. functional-design.md section: Scope defined (in/out with reasoning per item to prevent repeated assessment)
-        - [ ] 2i. functional-design.md section: Open questions resolved
-        - [ ] 2j. HM approved **(HM)**
+        _Skipped for Refactoring — functional design unchanged._
 
         ### 3. Validate function
-        - [ ] 3a. Design reviewed against codebase evidence
-        - [ ] 3b. Completeness assessed (all status 2 deliverables)
-        - [ ] 3c. HM approved **(HM)**
+        _Skipped for Refactoring — functional design unchanged._
 
         ### 4. Design solution
         - [ ] 4a. architecture.md section: Bounded architecture slice declared (modules permitted, modules excluded, cooperating interfaces)
+        - [ ] 4b. architecture.md section: Component responsibilities documented
+        - [ ] 4c. architecture.md section: Data flow documented
+        - [ ] 4d. architecture.md section: Public interfaces documented
+        - [ ] 4e. architecture.md section: Failure-mode inventory enumerated
+        - [ ] 4f. architecture.md section: Design alternatives evaluated (if non-trivial; at least one alternative with trade-off rationale)
+        - [ ] 4g. architecture.md section: Function manifest completed (all functions from architecture mapped to implementation units)
+        - [ ] 4h. operations.md created or updated
         - [ ] 4i. HM approved **(HM)**
 
         ### 5. Plan implementation
+        - [ ] 5a. Dependencies mapped between implementation units
+        - [ ] 5b. Critical path identified
+        - [ ] 5c. Feasibility verified
         - [ ] 5d. Effort estimated
         - [ ] 5e. Board issues created/updated/deleted
         - [ ] 5f. In-flight change registry checked
