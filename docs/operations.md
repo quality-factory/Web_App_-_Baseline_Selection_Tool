@@ -81,10 +81,11 @@ The default execution path uses locally hosted models (e.g., Ollama-compatible l
 
 To run the pipeline with local models:
 
-1. Ensure a local model server (e.g., Ollama) is running with at least three architecturally diverse models available.
-2. Execute the pipeline CLI, specifying the baseline identifier(s) and primary source URLs.
-3. Review the pipeline output, including any consensus-disagreement values flagged for Human Maintainer review.
-4. Validate and commit the updated `data/baselines.json`.
+1. Ensure a local model server (e.g., Ollama) is running with at least three architecturally diverse models available. "Diverse" means different model creators (e.g., Meta Llama, Mistral AI, Google Gemma) — see FR-C09.
+2. The pipeline runs a model qualification check (structured output compliance test) before extraction. Models that fail are excluded with a warning. The pipeline aborts if fewer than 2 qualified models remain.
+3. Execute the pipeline CLI, specifying baseline identifier(s). Primary source URLs are loaded from the manifest (`src/llm_consensus/sources.json`); verify URLs are current before the first run.
+4. Review the pipeline output, including any consensus-disagreement values and any model failures or exclusions flagged in the provenance records.
+5. Validate and commit the updated `data/baselines.json`.
 
 ### Adding remote providers
 

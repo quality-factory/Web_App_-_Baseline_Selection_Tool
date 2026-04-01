@@ -3,7 +3,7 @@
 **Status:** Final — pending Human Maintainer approval
 **Scope:** Phase a — baseline selection and comparison
 **Factory alignment:** SubscriptionFactory.md v13.5.0
-**Date:** 2026-03-31
+**Date:** 2026-04-01
 
 ---
 
@@ -54,6 +54,19 @@ This FD covers phase a (baseline selection) only. Phase b (guidance integration)
 The BST is a commercially developed and maintained tool representing a significant investment of time and expertise. This document governs two categories of business risk as first-class design requirements: intellectual property extraction and legal liability. See §2.1.
 
 GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §12. Legal review requirements: see §10.6.
+
+### 1.7 Bounded architecture slice
+
+This change introduces the BST as a greenfield application. The bounded architecture slice — the authoritative scope constraint for all downstream implementation per [Factory Spec §Agent Model] rule 8 — comprises the entire BST:
+
+| Subsystem | Scope | Location |
+|---|---|---|
+| Curation Pipeline | All components: Tier 1/2/2b/3 collectors, consensus pipeline, assembler, validator | `src/` (Python) |
+| Knowledge Store | Schema, versioned knowledge base, staleness metadata | `data/` |
+| Presentation Subsystem | PHP router/gating layer, SPA shell, Alpine.js UI, export logic, rate limiting, GT&C logging | `web/` |
+| CI/CD and enforcement | Workflows, hooks, linting, type checking, secrets scanning | `.github/`, `hooks/` |
+
+No modules outside this repository are modified by this change. Dependencies on external issues (hosting infrastructure [Infra_-_Subscription_Factory#18], GT&C [Infra_-_Subscription_Factory#17]) are go-live gates, not implementation blockers.
 
 ---
 
@@ -630,16 +643,16 @@ The data dictionary is the authoritative source for attribute definitions. Categ
 **FR-C07** Operable by a single person without external services beyond the ingested primary sources and LLM API calls.
 
 **FR-C08** The curation subsystem MUST support Tier 2b collection via multi-model LLM consensus extraction. The pipeline MUST:
-- (a) Accept a baseline identifier and one or more primary source URLs as input.
+- (a) Accept a baseline identifier and one or more primary source URLs as input. Primary source URLs are loaded from the pipeline's primary source manifest (data dictionary §3.1) and MAY be overridden via CLI arguments.
 - (b) Call at least three LLM APIs from different providers using the same prompt and the same JSON schema derived from the data dictionary attribute catalogue.
-- (c) Use structured output functions (JSON schema mode) to constrain LLM responses to the data dictionary's defined enum values and data types.
+- (c) Use structured output functions (JSON schema mode) to constrain LLM responses to the data dictionary's defined enum values and data types. Models that fail structured output validation after one retry are excluded from the consensus round for that baseline; excluded models are recorded in the provenance block with justification `"structured-output-failure"`.
 - (d) Require each LLM to produce a justification alongside each extracted value, citing the source document and reasoning, referencing one of the primary source URLs provided as input per FR-C10. URLs not provided as input MUST be rejected as potential hallucinations.
-- (e) Aggregate via majority-rules consensus: a value is accepted when at least 2 of 3 models agree; values without consensus are recorded as missing with reason "consensus-disagreement."
-- (f) Output one JSON file per baseline conforming to the knowledge store schema, with a complete provenance record per attribute value.
+- (e) Aggregate via majority-rules consensus: a value is accepted when at least 2 of 3 models agree; values without consensus are recorded as missing with reason "consensus-disagreement." When only 2 models produce valid responses (due to failure or exclusion per (c)), unanimous agreement (2-of-2) is required. When fewer than 2 models produce valid responses, all attributes for that baseline are recorded as missing with reason "consensus-disagreement."
+- (f) Output one JSON file per baseline conforming to the knowledge store schema, with a complete provenance record per attribute value. The assembler (see architecture §Component Design) merges per-baseline outputs into the single `data/baselines.json`; existing baselines not included in the current run are preserved.
 
-**FR-C09** The LLM models used in the consensus pipeline MUST be architecturally diverse (different model families from different providers). Architectural diversity MUST be verified, not assumed. Model selection MUST comply with BC-09 (licensing).
+**FR-C09** The LLM models used in the consensus pipeline MUST be architecturally diverse (different model families from different providers). "Provider" means the organisation that created and trained the model (e.g., Meta, Mistral AI, Google), not the serving infrastructure (e.g., Ollama). Three models from different creators served through a single local API endpoint satisfy this requirement. Architectural diversity MUST be verified, not assumed — the pipeline MUST record each model's creator and family in the provenance block. Model selection MUST comply with BC-09 (licensing).
 
-**FR-C10** The curation subsystem MUST direct LLMs to known primary source URLs listed in the data dictionary evidence base (§3), rather than relying on general web search. LLM outputs MUST be cross-referenced against published documentation.
+**FR-C10** The curation subsystem MUST direct LLMs to known primary source URLs listed in the data dictionary primary source registry (§3.1), rather than relying on general web search. LLM outputs MUST be cross-referenced against published documentation.
 
 **FR-C11** The curation subsystem MUST be executable on the factory laptop without external services beyond the LLM API calls themselves (BC-08). The default execution path is local-first, consistent with Operational Constraints #5 and BC-08: the pipeline MUST operate with locally hosted models (e.g., Ollama-compatible local HTTP API) as the primary path, requiring no remote API keys for default operation. Remote provider APIs are added when consensus diversity requires models not available locally. The core logic MUST use an API interface abstraction with no provider-specific dependencies; the local adapter is the first implementation built and tested. BC-05 confirms no PII is involved, permitting but not requiring public APIs.
 

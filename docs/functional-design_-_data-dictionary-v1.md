@@ -40,6 +40,28 @@ Attribute selection informed by:
 - **Microsoft** — Security Compliance Toolkit, Intune security baselines, Policy Analyzer
 - **Academic/practitioner** — SANS GIAC Gold papers comparing baseline families on operational dimensions; peer-reviewed research on cross-baseline setting overlap and conflict detection
 
+### 3.1 Primary source registry
+
+Canonical documentation URLs per in-scope baseline. The Tier 2b pipeline (FR-C10) directs LLMs exclusively to these URLs — any URL not listed here is rejected as a potential hallucination. URLs are verified by the Human Maintainer before each pipeline run; stale URLs are updated here before re-execution.
+
+| Baseline | Primary source URLs | Access |
+|---|---|---|
+| DISA STIG | DoD Cyber Exchange STIG library; STIG Viewer | Free |
+| OpenSCAP / SCAP Security Guide | ComplianceAsCode GitHub repository; OpenSCAP project documentation | Free / OSS |
+| NIST National Checklist Program | NIST NCP repository; SP 800-70 | Free |
+| Microsoft Security Compliance Toolkit | Microsoft Download Center SCT page; SCT documentation | Free |
+| CIS Benchmarks | CIS Benchmarks download portal (PDF); CIS Controls mapping | Free (PDF) |
+| ACSC Essential Eight | ACSC Essential Eight guidance; ISM control mappings | Free |
+| ANSSI Linux Guide | ANSSI hardening recommendations (GNU/Linux, Windows, AD) | Free |
+| Microsoft Intune Baselines | Microsoft Learn Intune security baselines documentation | Free (metadata) |
+| PCI DSS | PCI SSC document library (public summaries and guidance) | Metadata only |
+| ISO/IEC 27001 | ISO catalogue entry; publicly available scope descriptions | Metadata only |
+| HIPAA / HHS Guidance | HHS HIPAA guidance; Security Rule resources | Free |
+| NIS2 / Cyber Resilience Act | EUR-Lex NIS2 Directive text; ENISA guidance | Free |
+| SOC 2 | AICPA SOC 2 criteria descriptions (public summaries) | Metadata only |
+
+Actual URLs are not embedded in this document — they are maintained in the pipeline's primary source manifest (`src/llm_consensus/sources.json`) where they can be verified and updated operationally without a specification change. This table defines which sources are authoritative; the manifest provides the current URLs.
+
 ## 4. Attribute catalogue
 
 ### 4.1 Identity & Classification (6 attributes)
