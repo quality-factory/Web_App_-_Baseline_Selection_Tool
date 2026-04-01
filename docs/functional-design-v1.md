@@ -68,7 +68,7 @@ GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §12. 
 | BC-05 | No PII is processed by the BST as a primary application function. Infrastructure logging — including GT&C acceptance events — is governed by the Factory Owner's privacy statement §8.2.1 (user action logs, Art. 6(1)(f) AVG, 2-year retention) | §Explicit Non-Goals; Factory Owner privacy statement v5.2 |
 | BC-06 | All infrastructure must be classifiable under the factory's sovereignty taxonomy | §Operational Constraints #5 |
 | BC-07 | The presentation subsystem must be deployable on the factory's existing shared hosting environment | Q5 decision |
-| BC-08 | The curation subsystem must be executable on the factory laptop without external services | §Operational Constraints #5 |
+| BC-08 | The curation subsystem must be executable on the factory laptop without external services beyond LLM API calls used by the curation subsystem | §Operational Constraints #5 |
 | BC-09 | All tools and libraries must have clearly understood licensing terms | §Operational Constraints #4 |
 | BC-10 | The knowledge base content, attribute scoring methodology, recommendation logic, and selection rubrics are proprietary intellectual property of the Factory Owner and must be protected against extraction and unauthorised reuse | Factory Owner business requirement |
 | BC-11 | The BST is a decision-support tool, not a professional security advisory service. The Factory Owner's liability must be explicitly and consistently limited through mandatory disclaimers, terms of use, and design choices that prevent the tool from being mistaken for professional advice | Factory Owner business requirement |
@@ -126,7 +126,7 @@ The Factory Owner operates exclusively B2B. Dutch commercial law (Boek 6 BW) app
 
 ### 3.1 Subsystem overview
 
-**Curation Subsystem** — Collects, validates, scores, and assembles attribute values. Operates offline on the factory laptop. Never runs in the hosted environment.
+**Curation Subsystem** — Collects, validates, scores, and assembles attribute values via a multi-model LLM consensus pipeline. Calls multiple LLM APIs to extract structured attribute values from publicly accessible baseline documentation, aggregates results via majority-rules consensus, and outputs knowledge store-conformant JSON with full provenance records. Operates on the factory laptop. LLM API calls are the only external dependency. Never runs in the hosted environment.
 
 **Knowledge Store** — Persists curated attribute values with full provenance, versioning, and staleness tracking. Single source of truth for the presentation subsystem.
 
@@ -136,11 +136,14 @@ The Factory Owner operates exclusively B2B. Dutch commercial law (Boek 6 BW) app
 
 ```
 Primary sources ──► Curation Subsystem ──► Knowledge Store ──► Presentation Subsystem ──► User
-                    (factory laptop)        (versioned,          (hosted environment)
-                                            deployed artefact)   IP + liability controls
+(URLs to public       (factory laptop)        (versioned,          (hosted environment)
+ documentation)       │                        deployed artefact)   IP + liability controls
+                      ├── LLM API calls
+                      │   (structured extraction)
+                      └── Consensus aggregation
 ```
 
-The curation subsystem and presentation subsystem never interact directly at runtime. The knowledge store is the only transfer mechanism between them.
+The curation subsystem directs LLMs to known primary source URLs rather than relying on general web search (source grounding principle). The curation subsystem and presentation subsystem never interact directly at runtime. The knowledge store is the only transfer mechanism between them.
 
 ---
 
@@ -571,12 +574,15 @@ Then the file does not contain attribute data for baselines
 |---|---|---|---|
 | 1 | Machine-extractable | Automated ingestion from a machine-readable primary source | High |
 | 2 | Document-verifiable | Human reads official publication, confirms value, records source citation | High |
+| 2b | LLM-consensus-extracted | Multi-model LLM extraction with structured output constraints and majority-rules consensus (minimum 3 architecturally diverse models; 2-of-3 agreement required) | Medium |
 | 3 | Analyst-scored | Two independent scoring passes by a qualified analyst, minimum 48h apart; confidence fixed at Medium regardless of agreement | Medium |
 | 4 | Community-aggregated | Practitioner surveys or consensus; explicitly uncertain | Low |
 
 ### 5.4 Missing value policy
 
-Missing values are never inferred, estimated, or filled with defaults. Every missing value is represented explicitly with a stated reason: paywalled, empirical-only, no source found, disputed, or not applicable. Missing values on high-weight attributes reduce recommendation confidence — they are uncertainty signals, not negative scores.
+Missing values are never inferred, estimated, or filled with defaults. Every missing value is represented explicitly with a stated reason: paywalled, empirical-only, no source found, disputed, not applicable, or consensus-disagreement. Missing values on high-weight attributes reduce recommendation confidence — they are uncertainty signals, not negative scores.
+
+When the Tier 2b consensus pipeline produces no agreement (fewer than 2 of 3 models agree), the value is recorded as missing with reason "consensus-disagreement." Individual model outputs are preserved in the provenance record for Human Maintainer review.
 
 ### 5.5 Attribute catalogue
 
@@ -621,7 +627,26 @@ The data dictionary is the authoritative source for attribute definitions. Categ
 
 **FR-C06** Full provenance record generated for every attribute value: source identity, retrieval date, collection method, curator identity, confidence assessment.
 
-**FR-C07** Operable by a single person without external services beyond the ingested primary sources.
+**FR-C07** Operable by a single person without external services beyond the ingested primary sources and LLM API calls.
+
+**FR-C08** The curation subsystem MUST support Tier 2b collection via multi-model LLM consensus extraction. The pipeline MUST:
+- (a) Accept a baseline identifier and one or more primary source URLs as input.
+- (b) Call at least three LLM APIs from different providers using the same prompt and the same JSON schema derived from the data dictionary attribute catalogue.
+- (c) Use structured output functions (JSON schema mode) to constrain LLM responses to the data dictionary's defined enum values and data types.
+- (d) Require each LLM to produce a justification alongside each extracted value, citing the source document and reasoning, referencing one of the primary source URLs provided as input per FR-C10. URLs not provided as input MUST be rejected as potential hallucinations.
+- (e) Aggregate via majority-rules consensus: a value is accepted when at least 2 of 3 models agree; values without consensus are recorded as missing with reason "consensus-disagreement."
+- (f) Output one JSON file per baseline conforming to the knowledge store schema, with a complete provenance record per attribute value.
+
+**FR-C09** The LLM models used in the consensus pipeline MUST be architecturally diverse (different model families from different providers). Architectural diversity MUST be verified, not assumed. Model selection MUST comply with BC-09 (licensing).
+
+**FR-C10** The curation subsystem MUST direct LLMs to known primary source URLs listed in the data dictionary evidence base (§3), rather than relying on general web search. LLM outputs MUST be cross-referenced against published documentation.
+
+**FR-C11** The curation subsystem MUST be executable on the factory laptop without external services beyond the LLM API calls themselves (BC-08). The default execution path is local-first, consistent with Operational Constraints #5 and BC-08: the pipeline MUST operate with locally hosted models (e.g., Ollama-compatible local HTTP API) as the primary path, requiring no remote API keys for default operation. Remote provider APIs are added when consensus diversity requires models not available locally. The core logic MUST use an API interface abstraction with no provider-specific dependencies; the local adapter is the first implementation built and tested. BC-05 confirms no PII is involved, permitting but not requiring public APIs.
+
+**FR-C12 (Horizon 1, deferred)** Layer 2 (enum and schema validation) is implemented in Horizon 0 as part of FR-C08(c) and is therefore not listed here. The curation subsystem SHOULD support the following additional validation layers, to be implemented when triggered by catalogue expansion, commercial need, or Human Maintainer availability:
+- (a) Layer 1: Human verification of Objective + Easy attributes against primary sources, using the initial Tier 2b knowledge base as the benchmark dataset.
+- (b) Layer 3: Automated cross-attribute consistency rules enforced programmatically (e.g. `prescriptiveness: per_setting` requires `setting_count` to be non-null; `scap_compliance_level: scap_validated` requires `scap_xccdf` in `primary_format`).
+- (c) Layer 4: Ongoing spot-checks on a random sample of values per pipeline run, with consensus disagreement rate drift monitoring.
 
 ### 6.2 Knowledge Store
 

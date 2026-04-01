@@ -71,6 +71,35 @@ The acceptance log records personal data (IP address) governed by the Factory Ow
 
 **Audit access** — Log data is infrastructure-level per FR-P16 and not accessible to the application's recommendation or comparison logic. Access to the log is restricted to the Human Maintainer for compliance verification purposes.
 
+## Curation pipeline
+
+The multi-model LLM consensus pipeline (FR-C08–FR-C12) is a manual operation run on the factory laptop by the Human Maintainer. It is not automated or scheduled. Run when the knowledge base needs to be created or refreshed.
+
+### Default execution — local models
+
+The default execution path uses locally hosted models (e.g., Ollama-compatible local HTTP API). No API keys are required for default operation. The pipeline outputs `data/baselines.json` which follows the existing deployment path — no changes to the deployment pipeline or verification checklist.
+
+To run the pipeline with local models:
+
+1. Ensure a local model server (e.g., Ollama) is running with at least three architecturally diverse models available.
+2. Execute the pipeline CLI, specifying the baseline identifier(s) and primary source URLs.
+3. Review the pipeline output, including any consensus-disagreement values flagged for Human Maintainer review.
+4. Validate and commit the updated `data/baselines.json`.
+
+### Adding remote providers
+
+When consensus diversity requires models not available locally, remote provider APIs can be added. Remote API key handling follows SubscriptionFactory.md §Secure Configuration Input:
+
+- API keys are collected via the pipeline's interactive prompt at runtime.
+- Each prompt displays what the key is for and why it is needed.
+- Keys are held in memory for the duration of the pipeline run only.
+- Keys are NOT persisted to disk, environment variables, or configuration files.
+- Keys are cleared from memory on pipeline exit via structured cleanup.
+
+### Cost monitoring
+
+LLM API costs (remote providers only; local models have no per-call cost) are tracked against the BC-01 €300/month factory operating expenditure cap. The Human Maintainer verifies actual costs after each pipeline run using remote provider APIs.
+
 ## Operational decisions
 
 Operational decisions are tracked here. Architecture-scoped decisions are tracked in [`architecture.md`](architecture.md) §Open Technical Decisions.
