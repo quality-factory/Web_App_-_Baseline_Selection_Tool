@@ -2,8 +2,8 @@ AGENTS.md
 =========
 
 **Status**: Normative
-**Version**: 13.2.0 | Build: <BUILD_VERSION>
-This version of `AGENTS.md` is aligned with version 13.4.0 of `SubscriptionFactory.md`.
+**Version**: 13.3.0 | Build: <BUILD_VERSION>
+This version of `AGENTS.md` is aligned with version 13.6.0 of `SubscriptionFactory.md`.
 
 ---
 
@@ -13,7 +13,7 @@ This file defines mandatory behavioral rules for any automation agent (including
 
 This file governs **agent-internal behavior only**. Factory-wide business policies governing all actors (human and automation) are defined in the Subscription Factory Specification. Where this file references the factory specification, the referenced policy is authoritative; this file defines how agents implement it.
 
-Any agent MUST follow all rules in this file when operating in this repository. An agent operating in a named role (see §Role-specific constraints) MUST follow both the common enforcement requirements and the constraints for that role.
+Any agent MUST follow all rules in this file when operating in this repository. Role-specific behavioral constraints are defined in tool-specific skill prompts, not in this file. This file defines common enforcement requirements that apply to all agents regardless of role.
 
 ### How to read this file
 
@@ -21,11 +21,10 @@ This file is structured for token economy. An agent need only read:
 
 1. **§Absolute protections** — always (short, non-negotiable).
 2. **§Common enforcement requirements** — always (applies to all roles).
-3. **§Role-specific constraints → [your role]** — only the subsection matching the agent's active role.
-4. **§Issue register interaction** — only if the agent's work involves the issue register.
-5. **§Compliance confirmation** — always (short, pre-commit checklist).
+3. **§Role extension protocol** — only when adding a new role to the factory.
+4. **§Compliance confirmation** — always (short, pre-commit checklist).
 
-Sections not matching the agent's active role MAY be skipped without loss of compliance.
+Role-specific behavioral constraints and issue register interaction permissions are defined in the factory specification (see [Factory Spec §Issue Register Interaction]) and realized in tool-specific skill prompts. This file does not contain role-specific sections.
 
 ---
 
@@ -366,94 +365,13 @@ Agents MUST design their own solution based on codebase evidence before adopting
 
 ---
 
-## Issue register interaction
-
-The factory maintains a single issue register (see [Factory Spec §Information Asset Inventory]) serving as the backlog for all DevOps work items — features, bugs, maintenance, and TE-rule enforcement incidents. All agents interacting with the issue register MUST comply with the de-identification, secrets handling, and Zero Trust rules defined in §Common enforcement requirements. No sensitive, identifying, or confidential data may be written to issue register items unless explicitly authorized by the Human Maintainer.
-
-Role-specific permissions:
-
-| Role | Create items | Update items | Reference items |
-|------|-------------|-------------|----------------|
-| Clarifier | No | No | Yes — may reference existing items for requirements context |
-| Author | No | No | Yes — may link commits and PRs to existing items |
-| Validator | No | No | Yes — may flag issues in PR review comments; formal item creation is the Human Maintainer's responsibility |
-| Technical Analyst | Yes — enforcement incidents and proactive anomaly detections only | Yes — root-cause analysis and remediation recommendations only | Yes |
-| Governance Proposer | No | No | Yes — may reference issue register enforcement incidents as evidence in governance-change proposals |
-
-Only the Human Maintainer may create non-enforcement work items (features, bugs, maintenance tasks), close items, accept workarounds, or change item priority. This is consistent with the non-authoritative agent model (see [Factory Spec §Agent Model]).
-
----
-
-## Role-specific constraints
-
-Each subsection below defines constraints that apply **in addition to** all common enforcement requirements. An agent operating in a named role MUST read and follow its role subsection. Constraints from other role subsections do not apply unless the agent operates in multiple roles simultaneously.
-
-### Clarifier
-
-Agents MUST comply with [Factory Spec §Clarifier].
-
-In addition, a Clarifier:
-
-- MUST produce a structured requirement artifact containing at minimum: (i) the stated goal expressed in user-outcome terms, (ii) all open questions with their resolutions, (iii) an explicit list of what is in scope and out of scope for this change, and (iv) the bounded architecture slice (see [Factory Spec §Agent Model] rule 8), reproduced or referenced as the authoritative scope constraint for the change.
-- MUST flag ambiguities explicitly and request human resolution rather than making assumptions.
-- MUST NOT write application code, tests, or CI configuration. Requirements artifacts and documentation are within scope.
-- MUST NOT create or modify issue register items directly; ambiguities and open questions are communicated to the Human Maintainer conversationally.
-
-### Author
-
-Agents MUST comply with [Factory Spec §Author].
-
-In addition, an Author:
-
-- MUST have an approved bounded architecture slice declaration (produced by the Clarifier per §Clarifier) before beginning any task. The Author MUST NOT modify modules outside the declared scope per [Factory Spec §Agent Model] rule 8.
-- MUST operate in two gated phases per [Factory Spec §Author]: Phase 1 (spec, no implementation code) and Phase 2 (implementation, after Human Maintainer approval of the Phase 1 spec artifact).
-- Before proposing any new utility, type, component, helper, or pattern, MUST search the current application repository and the factory template repository for a functionally equivalent existing construct. If a suitable equivalent exists, the Author MUST reuse it. If no equivalent exists, the Author MUST state this explicitly in the pull request per [Factory Spec §Author].
-- MUST produce code that passes all configured enforcement checks (linting, type checking, secrets scanning, security SAST, code coverage thresholds, documentation coverage) before proposing a commit.
-- MUST include or update tests for any behavioral change.
-- MUST update documentation (README, operations guide, inline comments) for any user-visible change.
-- MUST record in the pull request description which agent/tool produced each major change, per [Factory Spec §CI-Time Enforcement Requirements].
-- MUST NOT create or modify issue register items directly; may reference existing items in commit messages and PR descriptions.
-
-### Validator
-
-Agents MUST comply with [Factory Spec §Validator].
-
-In addition, a Validator:
-
-- MUST produce a structured review containing at minimum: (i) a policy adherence verdict, (ii) a test coverage assessment, (iii) an explicit sign-off or list of required changes, and (iv) an edge-case coverage attestation confirming that every item in the Author's Phase 1 failure-mode inventory is addressed by the implementation and covered by at least one test, or is explicitly deferred with documented rationale approved by the Human Maintainer.
-- MUST NOT create or modify issue register items directly; issues discovered during review are reported in PR review comments for the Human Maintainer to triage.
-
-### Technical Analyst
-
-Agents MUST comply with [Factory Spec §Technical Analyst] and [Factory Spec §Agent Model] rule 6.
-
-In addition, a Technical Analyst:
-
-- Operates in **read-only mode** when accessing repository state (code, logs, CI results, enforcement output) for diagnostic purposes. MUST NOT modify code, configuration, or enforcement settings.
-- In **proactive mode**: monitors leading indicators (log growth, error rates, enforcement drift, resource consumption) and creates issue register items with analysis and recommendation when anomalies are detected.
-- In **reactive mode**: triggered by TE-rule violations at advisory or hard-gate level. Performs root-cause analysis using available system state and proposes at least one remediation scenario with a recommendation.
-- Diagnostic output (root-cause analysis, remediation proposals) MUST comply with §De-identification and metadata minimization and §Secret and credential handling.
-
-### Governance Proposer
-
-Agents MUST comply with [Factory Spec §Governance Proposer].
-
-In addition, a Governance Proposer:
-
-- MUST produce a structured governance-change proposal as an issue in the relevant repository's issue register, containing at minimum: (i) the evidence artifacts read with specific references, (ii) the proposed change classified as addition, modification, or retirement, (iii) for retirements the eval suite result or superseding control that justifies removal, (iv) the affected sections of `AGENTS.md` or the factory specification, and (v) the recommended governance-change workflow branch name.
-- MUST NOT implement changes, approve or merge pull requests, or modify any policy or protected file.
-- MUST NOT execute the factory eval suite directly; that function belongs to the Validator when reviewing the resulting governance-change PR.
-- Is explicitly non-authoritative: all proposals are subject to Human Maintainer judgment.
-
----
-
 ## Role extension protocol
 
 When a new agent role is added to the factory (see [Factory Spec §Organization Map]):
 
-1. A new subsection MUST be added under §Role-specific constraints following the same structure: role name as heading, reference to factory specification definition, bulleted list of role-specific constraints.
-2. A new row MUST be added to the §Issue register interaction permission table.
-3. All §Common enforcement requirements apply automatically to the new role without enumeration.
+1. A new skill MUST be created in the factory's skill directory containing the role's behavioral constraints: role identity, boundaries (referencing [Factory Spec] role definition), input/output artifacts, pipeline steps, and exit signal.
+2. A new row MUST be added to the issue register interaction permission table in the factory specification (see [Factory Spec §Issue Register Interaction]).
+3. All §Common enforcement requirements in this file apply automatically to the new role without enumeration.
 4. The new role MUST be explicitly non-authoritative unless the factory specification grants it authority (which, under the current single-authority model, it will not).
 5. This file's §Absolute protections apply to all roles, including new ones, without exception.
 
@@ -466,5 +384,5 @@ Agents MUST comply with [Factory Spec §Policy Authority and Immutability] for p
 Before creating or updating any commit in this repository, the agent MUST:
 
 - Inspect the current diff.
-- Verify that the proposed changes follow all rules in this file — both §Common enforcement requirements and the agent's applicable §Role-specific constraints.
+- Verify that the proposed changes follow all rules in this file (§Common enforcement requirements) and the agent's applicable role-specific skill prompt.
 - Explicitly state in its response whether the changes comply with these rules, or list any rules it cannot satisfy and stop before committing. This statement MUST be included in the transient conversation associated with the change (e.g., commit message, pull request description, or code review comment) and explicitly reference this document (`AGENTS.md`) by name.
