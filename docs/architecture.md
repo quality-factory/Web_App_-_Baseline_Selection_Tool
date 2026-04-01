@@ -330,6 +330,20 @@ Web_App_-_Baseline_Selection_Tool/
 | `validator.py` | Validates schema conformance and disclaimer block presence; rejects on failure |
 | `staleness.py` | Computes stale-attributes report from TTL metadata |
 
+### Curation pipeline dependencies
+
+All packages pinned in `requirements.txt` (TC-05). All free and open-source (TC-06).
+
+| Package | Used by | Purpose |
+|---|---|---|
+| `httpx` | Tier 1 parsers, Ollama adapter | HTTP client for source retrieval and local LLM API calls |
+| `jsonschema` | `validator.py`, `schema_gen.py` | KB schema validation; structured output compliance check |
+| `defusedxml` | `disa_stig.py`, `microsoft_sct.py` | Safe XML parsing of XCCDF/OVAL and GPO backup files |
+| `pytest` | `tests/` | Test framework (dev dependency) |
+| `mypy` | CI | Static type checking (dev dependency) |
+
+Standard library modules (`json`, `hashlib`, `datetime`, `pathlib`, `argparse`) are used throughout but not listed — they require no pinning.
+
 ### Web application modules
 
 | File | Technology | Responsibility |
