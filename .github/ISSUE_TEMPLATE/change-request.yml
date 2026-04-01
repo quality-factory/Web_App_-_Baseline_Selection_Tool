@@ -13,13 +13,85 @@ body:
     id: scenarios
     attributes:
       label: Solution scenarios
-      description: Multiple technical approaches with trade-offs. Added during Specification phase.
+      description: Multiple technical approaches with trade-offs. Added during Design solution phase.
     validations:
       required: false
   - type: textarea
     id: recommendation
     attributes:
       label: Recommended scenario
-      description: Winning scenario with reasoning. Added during Specification phase.
+      description: Winning scenario with reasoning. Added during Design solution phase.
+    validations:
+      required: false
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow checklist
+      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist)."
+      value: |
+        ### 1. Triage intake
+        - [ ] 1a. Problem statement written
+        - [ ] 1b. Relevance confirmed (not duplicate, not obsolete, not out of scope)
+        - [ ] 1c. Type set (Bug, CR, or Refactoring)
+        - [ ] 1d. Priority set
+
+        ### 2. Design function
+        - [ ] 2a. functional-design.md section: Product vision stated (problem statement, purpose, phase scope)
+        - [ ] 2b. functional-design.md section: Business constraints documented (with source traceability)
+        - [ ] 2c. functional-design.md section: User stories defined (Connextra format, INVEST-compliant, with acceptance criteria including edge cases)
+        - [ ] 2d. functional-design.md section: Functional requirements numbered (FR-xxx per subsystem, with acceptance criteria)
+        - [ ] 2e. functional-design.md section: UX requirements specified (user flows, interaction patterns, information architecture)
+        - [ ] 2f. functional-design.md section: Non-functional requirements documented
+        - [ ] 2g. functional-design.md section: Conceptual data model defined (entities, relationships, value policies)
+        - [ ] 2h. functional-design.md section: Scope defined (in/out with reasoning per item to prevent repeated assessment)
+        - [ ] 2i. functional-design.md section: Open questions resolved
+        - [ ] 2j. HM approved **(HM)**
+
+        ### 3. Validate function
+        - [ ] 3a. Design reviewed against codebase evidence
+        - [ ] 3b. Completeness assessed (all status 2 deliverables)
+        - [ ] 3c. HM approved **(HM)**
+
+        ### 4. Design solution
+        - [ ] 4a. architecture.md section: Bounded architecture slice declared (modules permitted, modules excluded, cooperating interfaces)
+        - [ ] 4b. architecture.md section: Component responsibilities documented
+        - [ ] 4c. architecture.md section: Data flow documented
+        - [ ] 4d. architecture.md section: Public interfaces documented
+        - [ ] 4e. architecture.md section: Failure-mode inventory enumerated
+        - [ ] 4f. architecture.md section: Design alternatives evaluated (if non-trivial; at least one alternative with trade-off rationale)
+        - [ ] 4g. architecture.md section: Function manifest completed (all functions from architecture mapped to implementation units)
+        - [ ] 4h. operations.md created or updated
+        - [ ] 4i. HM approved **(HM)**
+
+        ### 5. Plan implementation
+        - [ ] 5a. Dependencies mapped between implementation units
+        - [ ] 5b. Critical path identified
+        - [ ] 5c. Feasibility verified
+        - [ ] 5d. Effort estimated
+        - [ ] 5e. Board issues created/updated/deleted
+        - [ ] 5f. In-flight change registry checked
+        - [ ] 5g. HM approved **(HM)**
+
+        ### 6. Validate plan
+        - [ ] 6a. Plan completeness verified
+        - [ ] 6b. Collision check performed against in-flight registry
+        - [ ] 6c. HM approved **(HM)**
+
+        ### 7. Implement changes
+        - [ ] 7a. Code completed (all plan-manifest functions implemented)
+        - [ ] 7b. Test coverage verified (100% statement coverage on modules in coverage scope)
+        - [ ] 7c. Documentation updated (README.md, architecture.md, operations.md as applicable)
+        - [ ] 7d. Local enforcement checks passed
+        - [ ] 7e. PR created
+
+        ### 8. Review delivery
+        - [ ] 8a. CI passed
+        - [ ] 8b. Gemini review handled (each comment addressed or dismissed with rationale, marked resolved)
+        - [ ] 8c. PR merged
+        - [ ] 8d. Release workflow passed (if applicable)
+        - [ ] 8e. /_repo-check passed
+        - [ ] 8f. Delivery accepted **(HM)** (UAT result + decision record in PR description: what, why, edge cases handled/deferred, risks)
+        - [ ] 8g. In-flight registry entry removed
+        - [ ] 8h. Branch deleted
     validations:
       required: false
