@@ -47,7 +47,7 @@
 │  ┌─────────────────┐   ┌─────────────────────────────────┐   │
 │  │ data/           │   │ web/                             │   │
 │  │ baselines.json  │◄──│ index.php  (router, headers,     │   │
-│  │ (write-once KB) │   │            rate limit, auth log) │   │
+│  │ (write-once KB) │   │            rate limit, GT&C log) │   │
 │  └─────────────────┘   │ api/baselines.php  (gated KB)    │   │
 │                        │ index.html  (SPA shell)          │   │
 │                        │ assets/     (JS + CSS bundled)   │   │
@@ -61,7 +61,7 @@
                             └─────────────────┘
 ```
 
-The PHP layer handles routing, security headers, rate limiting, acceptance logging (FR-P16), and knowledge base access gating. The frontend is otherwise static. The knowledge base is not web-accessible directly — only through `api/baselines.php`.
+The PHP layer handles routing, security headers, rate limiting, GT&C acceptance logging (FR-P16), and knowledge base access gating. The frontend is otherwise static. The knowledge base is not web-accessible directly — only through `api/baselines.php`.
 
 ## Design Decisions
 
@@ -291,9 +291,9 @@ Web_App_-_Baseline_Selection_Tool/
 │   ├── baselines.json          — KB (served via PHP, not directly)
 │   └── stale-attributes.json  — CI-generated, not deployed
 ├── web/                        — deployed artefact
-│   ├── index.php               — SPA router, security headers, rate limiting
+│   ├── index.php               — SPA router, security headers, rate limiting, GT&C acceptance logging
 │   ├── api/
-│   │   └── baselines.php       — PHP-gated KB endpoint + acceptance logging
+│   │   └── baselines.php       — PHP-gated KB endpoint
 │   ├── config/
 │   │   └── settings.php        — GT&C URL, privacy statement URL (deployment-time config)
 │   ├── index.html
