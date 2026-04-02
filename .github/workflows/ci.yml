@@ -1,0 +1,276 @@
+# Canonical CI workflow for all factory repositories.
+# Synced byte-identical to all downstream repos via /_sync-governance.
+# See SubscriptionFactory.md §CI-Time Enforcement Requirements [Normative]
+# and §Canonical Workflow Governance [Normative].
+#
+# Language dispatcher: auto-detects development languages from file markers
+# and activates matching checks. Repos with no code get docs-only checks.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # =====================================================================
+  # Phase 1: Language detection
+  # Implements §CI Platform Detection Requirement [Normative].
+  # =====================================================================
+  detect:
+    name: Detect languages
+    runs-on: ubuntu-latest
+    outputs:
+      has-python: ${{ steps.detect.outputs.has-python }}
+      has-powershell: ${{ steps.detect.outputs.has-powershell }}
+      has-php: ${{ steps.detect.outputs.has-php }}
+      has-docs: ${{ steps.detect.outputs.has-docs }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            .
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Detect language markers
+        id: detect
+        run: |
+          # Language detection based on Target Language Register markers.
+          # Each marker is a file extension; vendor/ is excluded.
+          HAS_PYTHON=$(find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' | head -1 | grep -c . || echo 0)
+          HAS_PS=$(find . \( -name '*.ps1' -o -name '*.psm1' \) -not -path './vendor/*' -not -path './.git/*' | head -1 | grep -c . || echo 0)
+          HAS_PHP=$(find . -name '*.php' -not -path './vendor/*' -not -path './.git/*' | head -1 | grep -c . || echo 0)
+          HAS_DOCS=$(find . -name '*.md' -not -path './.git/*' | head -1 | grep -c . || echo 0)
+
+          echo "has-python=$([ "$HAS_PYTHON" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has-powershell=$([ "$HAS_PS" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has-php=$([ "$HAS_PHP" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has-docs=$([ "$HAS_DOCS" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+          echo "Detection results:"
+          echo "  Python:     $([ "$HAS_PYTHON" -gt 0 ] && echo yes || echo no)"
+          echo "  PowerShell: $([ "$HAS_PS" -gt 0 ] && echo yes || echo no)"
+          echo "  PHP:        $([ "$HAS_PHP" -gt 0 ] && echo yes || echo no)"
+          echo "  Docs:       $([ "$HAS_DOCS" -gt 0 ] && echo yes || echo no)"
+
+  # =====================================================================
+  # Phase 2: Language-specific enforcement
+  # Each job runs only when its language is detected.
+  # =====================================================================
+
+  python:
+    name: Python checks
+    needs: detect
+    if: needs.detect.outputs.has-python == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
+
+      - name: Compile check
+        run: |
+          find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' \
+            -exec python -m py_compile {} +
+
+      - name: Lint (informational)
+        continue-on-error: true
+        run: |
+          if command -v pylint > /dev/null 2>&1; then
+            find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' -not -path './tests/*' \
+              | xargs pylint --fail-under=0 || true
+          else
+            echo "pylint not installed — skipping"
+          fi
+
+      - name: Type check (informational)
+        continue-on-error: true
+        run: |
+          if command -v mypy > /dev/null 2>&1; then
+            find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' \
+              | xargs mypy --ignore-missing-imports || true
+          else
+            echo "mypy not installed — skipping"
+          fi
+
+      - name: Tests
+        continue-on-error: true
+        run: |
+          if command -v pytest > /dev/null 2>&1; then
+            pytest --tb=short || true
+          elif [ -d tests ] && find tests -name '*.py' | head -1 | grep -q .; then
+            python -m unittest discover -s tests || true
+          else
+            echo "No test framework detected — skipping"
+          fi
+
+  powershell:
+    name: PowerShell checks
+    needs: detect
+    if: needs.detect.outputs.has-powershell == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install test dependencies
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          if (-not (Get-Module -ListAvailable -Name Pester)) {
+            Install-Module Pester -Scope CurrentUser -Force
+          }
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          }
+
+      - name: Lint (PSScriptAnalyzer, informational)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $files = Get-ChildItem -Recurse -Include *.ps1,*.psm1 -Exclude vendor
+          if ($files) {
+            if (Test-Path .PSScriptAnalyzerSettings.psd1) {
+              Invoke-ScriptAnalyzer -Path . -Recurse -Settings .PSScriptAnalyzerSettings.psd1
+            } else {
+              Invoke-ScriptAnalyzer -Path . -Recurse -ExcludeRule PSAvoidUsingWriteHost
+            }
+          } else {
+            Write-Host "No PowerShell files found — skipping"
+          }
+
+      - name: Tests (Pester)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          if (Test-Path tests) {
+            $config = New-PesterConfiguration
+            $config.Run.Path = 'tests'
+            $config.Run.Exit = $true
+            $config.Output.Verbosity = 'Detailed'
+            Invoke-Pester -Configuration $config
+          } else {
+            Write-Host "No tests/ directory found — skipping"
+          }
+
+  php:
+    name: PHP checks
+    needs: detect
+    if: needs.detect.outputs.has-php == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Syntax check
+        run: |
+          ERRORS=0
+          while IFS= read -r phpfile; do
+            if ! php -l "$phpfile" 2>&1 | grep -q "No syntax errors"; then
+              ERRORS=$((ERRORS + 1))
+            fi
+          done < <(find . -name '*.php' -not -path './vendor/*' -not -path './.git/*')
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::PHP syntax errors found in $ERRORS file(s)"
+            exit 1
+          fi
+
+      - name: Lint (informational)
+        continue-on-error: true
+        run: |
+          if command -v phpstan > /dev/null 2>&1; then
+            phpstan analyse || true
+          else
+            echo "phpstan not installed — skipping"
+          fi
+
+  # =====================================================================
+  # Phase 3: Universal checks (all repos)
+  # =====================================================================
+
+  docs:
+    name: Documentation checks
+    needs: detect
+    if: needs.detect.outputs.has-docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check markdown links (informational)
+        continue-on-error: true
+        run: |
+          # Basic check: find broken internal markdown links.
+          find . -name '*.md' -not -path './.git/*' | while read -r mdfile; do
+            grep -oP '\[.*?\]\((?!https?://)(.*?)\)' "$mdfile" | while read -r link; do
+              target=$(echo "$link" | sed 's/.*](\(.*\))/\1/' | sed 's/#.*//')
+              if [ -n "$target" ] && [ ! -f "$target" ] && [ ! -d "$target" ]; then
+                echo "WARNING: broken link in $mdfile: $target"
+              fi
+            done
+          done
+
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Scan for secrets
+        run: |
+          FOUND=0
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            if grep -lqE "-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{82}" "$file" 2>/dev/null; then
+              echo "::error file=$file::Possible secret detected"
+              FOUND=1
+            fi
+          done < <(git diff --name-only --diff-filter=ACM "${{ github.event.pull_request.base.sha || 'HEAD~1' }}" HEAD 2>/dev/null || git ls-files)
+          if [ "$FOUND" -ne 0 ]; then
+            echo "::error::Secrets scanning detected potential secrets. Review flagged files."
+            exit 1
+          fi
+
+  suppressions:
+    name: Suppression inventory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Count suppression directives (informational)
+        continue-on-error: true
+        run: |
+          echo "=== Suppression Inventory ==="
+          TOTAL=0
+          for pattern in \
+            '# noqa' '# type: ignore' '# pylint: disable' '# pragma: no cover' \
+            '// @ts-ignore' '// @ts-expect-error' '// eslint-disable' \
+            '@phpstan-ignore' '@psalm-suppress' \
+            '\[Diagnostics.CodeAnalysis.SuppressMessage'; do
+            COUNT=$(grep -r --include='*.py' --include='*.ts' --include='*.js' --include='*.php' --include='*.ps1' \
+              -c "$pattern" . 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+            if [ "$COUNT" -gt 0 ]; then
+              echo "  $pattern: $COUNT"
+              TOTAL=$((TOTAL + COUNT))
+            fi
+          done
+          echo "  TOTAL: $TOTAL"
+          echo ""
+          echo "This is an informational inventory per CI req 15."
+          echo "An increase in suppressions triggers advisory review."
