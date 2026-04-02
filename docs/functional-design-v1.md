@@ -20,8 +20,9 @@
 8. [Recommendation Logic](#8-recommendation-logic)
 9. [Multi-Tenancy Requirements](#9-multi-tenancy-requirements)
 10. [Non-Functional Requirements](#10-non-functional-requirements)
-11. [Functional Decision Log](#11-functional-decision-log)
-12. [Out of Scope — v1](#12-out-of-scope--v1)
+11. [Security Requirements](#11-security-requirements)
+12. [Functional Decision Log](#12-functional-decision-log)
+13. [Out of Scope — v1](#13-out-of-scope--v1)
 
 ---
 
@@ -53,7 +54,7 @@ This FD covers phase a (baseline selection) only. Phase b (guidance integration)
 
 The BST is a commercially developed and maintained tool representing a significant investment of time and expertise. This document governs two categories of business risk as first-class design requirements: intellectual property extraction and legal liability. See §2.1.
 
-GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §12. Legal review requirements: see §10.6.
+GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §13. Legal review requirements: see §10.6.
 
 ### 1.7 Bounded architecture slice
 
@@ -102,7 +103,7 @@ The DevOps investment required to develop, curate, and maintain the BST represen
 4. Automated access by bots, scrapers, crawlers, or AI agents must be technically deterred and contractually prohibited.
 5. The GT&C must prohibit: systematic data extraction, use of tool outputs to train machine learning models, reproduction of tool content without attribution, and commercial use of extracted data.
 
-**GT&C status:** The GT&C is currently in preparation. This is an accepted risk contingent on the BST remaining non-public until the GT&C is published. HTTP Basic Auth on the BST URL is the interim access control. See §12 (go-live gate) and §10.6.
+**GT&C status:** The GT&C is currently in preparation. This is an accepted risk contingent on the BST remaining non-public until the GT&C is published. HTTP Basic Auth on the BST URL is the interim access control. See §13 (go-live gate) and §10.6.
 
 #### 2.1.2 Limitation of liability
 
@@ -831,14 +832,142 @@ In v1, only one tenant exists: the factory itself. No tenant management, authent
 
 ### 10.6 Legal and compliance
 
-- GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §12. Tracked as [Infra_-_Subscription_Factory#17](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/17).
+- GT&C preparation status and accepted risk: see §2.1.1. Go-live gate: see §13. Tracked as [Infra_-_Subscription_Factory#17](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/17).
 - Before go-live, the GT&C liability limitation clause must be reviewed for compliance with Dutch commercial law (Boek 6 BW) — specifically: reasonableness of the limitation (Art. 6:248 BW), and whether intentional acts or gross negligence carve-outs are required. EU consumer protection law (Directive 93/13/EEC) does not apply to the B2B-only client base.
 - GT&C version must be tracked. Changes to the GT&C that affect user rights trigger a new acceptance event requirement.
 - The disclaimer text (§2.1.2) must be reviewed for legal adequacy before go-live. It is not a substitute for the GT&C.
 
 ---
 
-## 11. Functional Decision Log
+## 11. Security Requirements
+
+This section consolidates the security requirements for the BST as a business-facing summary. It documents what the business requires to be protected, framed for business stakeholder review. Technical threat modelling and enforcement mechanisms are deferred to the architecture phase (Design solution, item 4i).
+
+### 11.1 Data classification
+
+| Data category | Classification | Rationale |
+|---|---|---|
+| Knowledge base (attribute values, scoring rubrics, recommendation methodology) | **Proprietary / Commercial-in-confidence** | Represents the Factory Owner's curated intellectual work (BC-10). Protection by design required. |
+| Attribute provenance records | **Internal** | Source citations to public documents; value is in the curation, not the sources themselves. |
+| GT&C acceptance log (IP address, timestamp, GT&C version, user agent hash) | **Personal data (Art. 4(1) AVG)** | IP address is personal data under GDPR/AVG. Processing governed by privacy statement §8.2.1, Art. 6(1)(f) AVG. 2-year retention. |
+| Environment profile answers (wizard inputs) | **Transient / Not stored** | Exists only in browser session memory (FR-P02). No server-side persistence. |
+| Disclaimer text | **Public** | Intentionally displayed to all users. |
+| Curation pipeline intermediate files | **Internal** | Staging-directory outputs; not deployed. Contain LLM extraction results with provenance. |
+
+### 11.2 Compliance constraints
+
+| Constraint | Source | Implication |
+|---|---|---|
+| Dutch commercial law (Boek 6 BW) | §10.6 | Liability limitation clause must be reviewed for reasonableness (Art. 6:248 BW). Intentional acts / gross negligence carve-outs may be required. |
+| AVG/GDPR Art. 6(1)(f) | Privacy statement §8.2.1 | GT&C acceptance log processing requires legitimate interest basis. 2-year retention. Erasure via "beyond use" marking. |
+| EU consumer protection (Directive 93/13/EEC) | §2.1.2 | Does not apply — B2B-only client base. |
+| BC-09 licensing | §2 | All tools and libraries must have clearly understood licensing terms. |
+| Sovereignty taxonomy | BC-06, §10.3 | All infrastructure classified before deployment; exit strategies documented for class (b) components. |
+| AI Act (Reg. (EU) 2024/1689) | §11.5 | BST not high-risk; recommendation engine not an AI system; deployer obligations for LLM use in curation pipeline satisfied. See §11.5 for full assessment. |
+
+### 11.3 Access control requirements
+
+| Control | Requirement | Source |
+|---|---|---|
+| GT&C acceptance gate | GT&C displayed and accepted before access to tool outputs | FR-P10, §2.1.2 |
+| Interim access control | HTTP Basic Auth while GT&C is in preparation | §2.1.1, §13 go-live gate |
+| Rate limiting | Server-side per-IP rate limiting on all content requests | FR-P12, §2.1.3 |
+| Bot deterrence | robots.txt prohibiting known AI crawlers; bot user-agent rejection at PHP layer | FR-P13, §2.1.3 |
+| Knowledge base gating | KB served only via PHP endpoint; direct file access blocked | FR-P09, BC-10 |
+| No application-level auth in v1 | No accounts, sessions, or per-user identity | FR-P02, §4.1, §9.2 |
+| v2 provision | Log schema accommodates per-user identity field addition without structural change | §9.3 |
+
+### 11.4 Trust boundaries
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  TRUST BOUNDARY 1: Factory laptop (sovereign)            │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Curation pipeline                                 │  │
+│  │  - LLM API calls cross this boundary (outbound)    │  │
+│  │  - LLM responses are untrusted input               │  │
+│  │  - Primary source URLs are allowlisted (FR-C10)    │  │
+│  │  - Schema validation before write (FR-C05)         │  │
+│  └───────────────────────────────────────────────────┘  │
+│                      │ committed via PR + CI             │
+└──────────────────────┼──────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│  TRUST BOUNDARY 2: Shared hosting (semi-trusted)         │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  PHP layer (enforces rate limiting, headers, gating)│  │
+│  │  - All inbound HTTP requests are untrusted          │  │
+│  │  - KB served read-only; no write path from web      │  │
+│  │  - Acceptance log is write-once                     │  │
+│  └───────────────────────────────────────────────────┘  │
+└──────────────────────┬──────────────────────────────────┘
+                       │ HTTPS
+┌──────────────────────▼──────────────────────────────────┐
+│  TRUST BOUNDARY 3: Browser (untrusted)                   │
+│  - Environment profile answers remain client-side only   │
+│  - All recommendation logic executes client-side         │
+│  - KB content visible in browser devtools (accepted      │
+│    residual risk; protection goal is bulk extraction      │
+│    prevention, not cryptographic inaccessibility)         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Cross-boundary data flows:**
+
+1. **LLM API → Curation pipeline:** Untrusted. Schema-validated and consensus-filtered before acceptance (FR-C08). URLs cross-referenced against allowlist (FR-C10).
+2. **Curation pipeline → Knowledge store:** Validated by assembler + schema validator (FR-C05). Only written after full validation passes.
+3. **Knowledge store → Shared hosting:** Deployed via CI + Plesk webhook. Two-gate protection (CI validates on `main`; only `main` merges to `deploy`).
+4. **Shared hosting → Browser:** PHP-gated. Rate-limited. Security headers enforced. KB not directly accessible as static file.
+5. **Browser → Shared hosting:** GT&C acceptance event only. No user-supplied data reaches the recommendation or comparison logic.
+
+### 11.5 AI Act (Regulation (EU) 2024/1689) compliance assessment
+
+The BST uses general-purpose AI models (LLMs) in its offline curation pipeline (Tier 2b). This section assesses regulatory obligations under the AI Act.
+
+**Classification of the BST's recommendation engine:**
+
+The recommendation engine is a deterministic, rule-based weighted scoring system: same knowledge base version + same environment profile answers = same ranked output (§8.2). It does not infer, adapt, or exhibit autonomy. It does not meet the Article 3(1) definition of an "AI system." The engine is therefore outside the AI Act's scope as a system being placed on the market.
+
+**Classification of the curation pipeline's use of LLMs:**
+
+The Factory Owner is a **deployer** (Art. 3(4)) of general-purpose AI models used to extract structured attribute values from public documentation. The LLM providers are **providers** of general-purpose AI models. The curation pipeline operates offline on the factory laptop and does not interact with end users.
+
+**High-risk assessment (Art. 6, Annex III):**
+
+The BST does not fall into any Annex III high-risk category. It does not perform biometric identification, operate critical infrastructure, evaluate natural persons for education/employment/benefits/credit, assist law enforcement, or influence elections. Even if Annex III were applicable, the Art. 6(3) exemptions would apply: the BST performs a narrow procedural task (baseline comparison) and improves the result of a previously completed human activity (baseline selection). No profiling of natural persons occurs.
+
+**Transparency obligations (Art. 50):**
+
+| Obligation | Trigger | BST assessment |
+|---|---|---|
+| Art. 50(1): Inform users of AI interaction | AI system intended to interact directly with natural persons | Does not apply — the recommendation engine is rule-based, not AI. Users interact with a deterministic scoring system. |
+| Art. 50(2): Mark AI-generated content as machine-readable | AI systems generating synthetic text/content | Borderline — LLM-extracted attribute values could be considered AI-generated content. However, the values are factual extractions from primary sources, consensus-filtered, and human-reviewed — not synthetic content. |
+
+**Existing transparency measures (conservative compliance):**
+
+Regardless of whether Art. 50(2) strictly applies, the BST already provides transparency exceeding the regulation's intent:
+- Every attribute value displays its trust tier; Tier 2b is explicitly labelled as LLM-consensus-extracted (FR-P03).
+- Full provenance records include model identifiers, prompt versions, and individual model outputs (FR-C06, FR-C08(f)).
+- The disclaimer states that the knowledge base may contain inaccuracies (§2.1.2).
+- Confidence ceilings are enforced: LLM-extracted values cannot exceed Medium confidence (§5.3).
+
+**AI literacy (Art. 4):**
+
+The Factory Owner, as deployer of LLM models, must ensure sufficient AI literacy of staff operating the curation pipeline. This is satisfied by the single-operator model (BC-08, FR-C07): the Human Maintainer operates the pipeline, reviews consensus outputs, and makes acceptance decisions. The curation pipeline's provenance records and degradation rules (FR-C08(e)) support informed oversight.
+
+**Summary:**
+
+| Requirement | Status | Mechanism |
+|---|---|---|
+| Not high-risk (Annex III) | Confirmed | No applicable category |
+| Recommendation engine not an AI system | Confirmed | Deterministic rule-based scoring (§8.2) |
+| Deployer obligations for LLM use | Applicable | Single-operator model with full provenance |
+| Art. 50 transparency | Exceeded voluntarily | Trust tier display, provenance records, confidence ceilings |
+| Art. 4 AI literacy | Satisfied | Human Maintainer as sole pipeline operator |
+
+---
+
+## 12. Functional Decision Log
 
 All open functional decisions from the design phase are resolved. This section serves as a traceable record.
 
@@ -847,12 +976,12 @@ All open functional decisions from the design phase are resolved. This section s
 | OFD-01 — Tier 3 single-rater risk | Two scoring passes by the same analyst, minimum 48 hours apart. Confidence fixed at Medium regardless of agreement. | §5.3 Trust tier model, FR-C03 |
 | OFD-02 — Value challenge mechanism | GitHub issue pre-filled link. In scope for v1. | UC-02 AC6, §7.3 |
 | OFD-03 — Export format scope | Both UC-06a (PDF) and UC-06b (markdown) in v1. | UC-06a, UC-06b |
-| OFD-04 — Access control gate in v1 | IP-based acceptance log in v1 (no application-level auth required); legally grounded under privacy statement §8.2.1. HTTP Basic Auth on BST URL while GT&C is in preparation. Per-user forensic log in v2. | FR-P16, §9.3, §12 go-live gate |
+| OFD-04 — Access control gate in v1 | IP-based acceptance log in v1 (no application-level auth required); legally grounded under privacy statement §8.2.1. HTTP Basic Auth on BST URL while GT&C is in preparation. Per-user forensic log in v2. | FR-P16, §9.3, §13 go-live gate |
 | OFD-05 — Knowledge base serving mechanism | PHP-gated endpoint (S7-B). Direct static file URL blocked. Requires S1-B (PHP thin layer) — confirmed in [`architecture.md`](architecture.md) §Knowledge base serving. | FR-P09 |
 
 ---
 
-## 12. Out of Scope — v1
+## 13. Out of Scope — v1
 
 The following are explicitly excluded from v1 and must not be introduced without a governance-change proposal:
 
