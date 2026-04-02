@@ -5,6 +5,9 @@
 #
 # Language dispatcher: auto-detects development languages from file markers
 # and activates matching checks. Repos with no code get docs-only checks.
+#
+# No path filtering at trigger level — different repos have different file
+# types. Instead, in-job change detection gates expensive steps.
 
 name: CI
 
@@ -13,33 +16,92 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  # =====================================================================
-  # Phase 1: Language detection
-  # Implements §CI Platform Detection Requirement [Normative].
-  # =====================================================================
+  # ┌──────────────────────────────────────────────────────────────────────┐
+  # │ Five-job pipeline: detect → lint (Ubuntu) → test (per-language)     │
+  # │                    detect → compliance (Ubuntu)                     │
+  # │                                                                     │
+  # │ Job: detect (ubuntu-latest)                                         │
+  # │  #  Step                          Code  Non-code  Draft  CI-only    │
+  # │  1  Checkout                       Y       Y        Y      Y        │
+  # │  2  Detect language markers        Y       Y        Y      Y        │
+  # │  3  Detect code changes            Y       Y        Y      Y        │
+  # │                                                                     │
+  # │ Job: lint (ubuntu-latest, needs: detect)                            │
+  # │  #  Step                          Code  Non-code  Draft  CI-only    │
+  # │  1  Checkout                       Y       Y        N      N        │
+  # │  2  Protected file detection       Y       Y        N      N        │
+  # │  3  Secrets scan (gitleaks)        Y       Y        N      N        │
+  # │  4  Version injection              Y       N        N      N        │
+  # │  5  Suppression inventory (info)   Y       N        N      N        │
+  # │  6  PS: cache + install PSSA       Y(PS)   N        N      N        │
+  # │  7  PS: auto-format                Y(PS)   N        N      N        │
+  # │  8  PS: PSScriptAnalyzer           Y(PS)   N        N      N        │
+  # │  9  Python: lint                   Y(Py)   N        N      N        │
+  # │ 10  PHP: syntax + lint             Y(PHP)  N        N      N        │
+  # │ 11  SCA advisory check (info)      Y       N        N      N        │
+  # │                                                                     │
+  # │ Job: test (per-language runner, needs: lint)                        │
+  # │  #  Step                          Code  Non-code  Draft  CI-only    │
+  # │  1  PS: Pester + coverage (Win)   Y(PS)   N        N      N        │
+  # │  2  Python: pytest + coverage     Y(Py)   N        N      N        │
+  # │  3  PHP: phpunit                  Y(PHP)  N        N      N        │
+  # │  4  Coverage enforcement           Y       N        N      N        │
+  # │  5  Publish test summary           Y       N        N      N        │
+  # │  6  Upload test results            Y       N        N      N        │
+  # │  7  Upload coverage                Y       N        N      N        │
+  # │                                                                     │
+  # │ Job: compliance (ubuntu-latest, needs: detect)                      │
+  # │  #  Step                          Code  Non-code  Draft  CI-only    │
+  # │  1  Doc coverage (info)            Y       Y        N      N        │
+  # │  2  License compliance (info)      Y       N        N      N        │
+  # │  3  SBOM generation (info)         Y       N        N      N        │
+  # │  4  Upload SBOM                    Y       N        N      N        │
+  # │                                                                     │
+  # │ Code     = source file changed                                      │
+  # │ Non-code = only docs/config changed (language steps skipped)        │
+  # │ Draft    = N for all except detect (job-level skip for drafts)      │
+  # │ CI-only  = only workflow YAML changed                               │
+  # │ (PS/Py/PHP) = conditional on language detection                     │
+  # └──────────────────────────────────────────────────────────────────────┘
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Job 1: Detect (Ubuntu — language detection + change detection)
+  # Always runs, including for draft PRs (other jobs check draft status).
+  # §CI-Time Enforcement #1: Language detection is fail-closed.
+  # ════════════════════════════════════════════════════════════════════════
   detect:
-    name: Detect languages
+    name: Detect
     runs-on: ubuntu-latest
     outputs:
-      has-python: ${{ steps.detect.outputs.has-python }}
-      has-powershell: ${{ steps.detect.outputs.has-powershell }}
-      has-php: ${{ steps.detect.outputs.has-php }}
-      has-docs: ${{ steps.detect.outputs.has-docs }}
+      has-python: ${{ steps.languages.outputs.has-python }}
+      has-powershell: ${{ steps.languages.outputs.has-powershell }}
+      has-php: ${{ steps.languages.outputs.has-php }}
+      has-docs: ${{ steps.languages.outputs.has-docs }}
+      code-changed: ${{ steps.changes.outputs.code-changed }}
+      source-changed: ${{ steps.changes.outputs.source-changed }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          sparse-checkout: |
-            .
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
+          fetch-depth: 0
 
+      # ── Language detection (§CI Platform Detection Requirement) ────────
+      # Scans the repository for language markers (file extensions).
+      # vendor/ and .git/ are excluded. Each detected language activates
+      # its corresponding lint/test/compliance steps in downstream jobs.
       - name: Detect language markers
-        id: detect
+        id: languages
+        shell: bash
         run: |
           # Language detection based on Target Language Register markers.
           # Each marker is a file extension; vendor/ is excluded.
@@ -59,127 +121,483 @@ jobs:
           echo "  PHP:        $([ "$HAS_PHP" -gt 0 ] && echo yes || echo no)"
           echo "  Docs:       $([ "$HAS_DOCS" -gt 0 ] && echo yes || echo no)"
 
-  # =====================================================================
-  # Phase 2: Language-specific enforcement
-  # Each job runs only when its language is detected.
-  # =====================================================================
+      # ── Change detection (fail-closed) ─────────────────────────────────
+      # §CI-Time Enforcement #2: Fail-closed change detection.
+      # Emits two flags:
+      #   code-changed    = any source file changed (.py/.ps1/.psm1/.psd1/
+      #                     .php/.bat/.sh/workflow YAML). Gates linting,
+      #                     formatting, signing, SCA, and compliance.
+      #   source-changed  = narrower: language source files only (not
+      #                     docs/config/workflow). Gates test execution.
+      # If base commit cannot be determined, assumes changed (fail-closed).
+      - name: Detect code changes
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
 
-  python:
-    name: Python checks
-    needs: detect
-    if: needs.detect.outputs.has-python == 'true'
+          if [ -z "$BASE" ]; then
+            echo "Cannot determine base commit — assuming changed (fail-closed)."
+            echo "code-changed=true" >> "$GITHUB_OUTPUT"
+            echo "source-changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FILES=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
+          if [ -z "$FILES" ]; then
+            echo "No changed files detected or diff failed — assuming changed (fail-closed)."
+            echo "code-changed=true" >> "$GITHUB_OUTPUT"
+            echo "source-changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$FILES"
+
+          # Broad: any source file or workflow YAML changed.
+          # Gates formatting, linting, signing, SCA, version injection.
+          if echo "$FILES" | grep -qE '\.(py|ps1|psm1|psd1|php|bat|sh)$|^\.github/workflows/.*\.yml$'; then
+            echo "Code changes detected."
+            echo "code-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No code changes — language-specific steps will be skipped."
+            echo "code-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Narrow: language source files only (not docs, config, or workflow YAML).
+          # Gates test execution — tests only need to run when actual source changes.
+          if echo "$FILES" | grep -qE '\.(py|ps1|psm1|psd1|php|bat|sh)$'; then
+            echo "Source changes detected — tests will run."
+            echo "source-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No source changes — test execution will be skipped."
+            echo "source-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Job 2: Lint and Scan (Ubuntu — 1x billing rate)
+  # Universal checks that do not require Windows. Language-specific linting
+  # is conditional on detection outputs. Secrets scanning uses gitleaks
+  # with integrity verification.
+  # §CI-Time Enforcement #3-#11: SAST, secrets, protected files, SCA.
+  # ════════════════════════════════════════════════════════════════════════
+  lint:
+    name: Lint and Scan
+    needs: [detect]
+    # Skip draft PRs; push events always run. §CI-Time Enforcement #4.
+    if: github.event_name == 'push' || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    env:
+      GITLEAKS_VERSION: '8.30.0'
+      GITLEAKS_SHA256: '54FE94F644B832DD08E8C3A5915EFB3BFA862386D59FB27CA0792CB687A83573'
 
-      - name: Set up Python ${{ matrix.python-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      # ── Protected file detection (§Protected File Enforcement #1-#3) ───
+      # Reads PROTECTED_FILES.md for the file list — no per-repo CI
+      # customization needed. Each repo adds files to its own inventory.
+      # Hard gate on PRs, informational on push. governance-changes/*
+      # branches are permitted to modify protected files.
+      - name: Protected file detection
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if [ ! -f PROTECTED_FILES.md ]; then
+            echo "No PROTECTED_FILES.md found — skipping."
+            exit 0
+          fi
+
+          # Parse PROTECTED_FILES.md: extract paths from the table's first column.
+          # Lines matching '| `<path>` |' are inventory rows.
+          PROTECTED_PATHS=$(grep -oP '(?<=\| `)([^`]+)(?=` \|)' PROTECTED_FILES.md || true)
+          if [ -z "$PROTECTED_PATHS" ]; then
+            echo "No protected file paths found in PROTECTED_FILES.md — skipping."
+            exit 0
+          fi
+
+          echo "Protected files from PROTECTED_FILES.md:"
+          echo "$PROTECTED_PATHS"
+          echo ""
+
+          # Get files changed in this PR.
+          CHANGED=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null || echo "")
+          if [ -z "$CHANGED" ]; then
+            echo "No changed files detected — skipping."
+            exit 0
+          fi
+
+          # Check each protected path against changed files.
+          FOUND=0
+          while IFS= read -r ppath; do
+            [ -z "$ppath" ] && continue
+            if echo "$CHANGED" | grep -qF "$ppath"; then
+              echo "  MODIFIED: $ppath"
+              FOUND=$((FOUND + 1))
+            fi
+          done <<< "$PROTECTED_PATHS"
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "No protected files modified in this PR."
+            exit 0
+          fi
+
+          echo ""
+          echo "::warning::$FOUND protected file(s) modified in this PR (see above)."
+
+          # governance-changes/* branches are permitted to modify protected files.
+          BRANCH="${{ github.head_ref }}"
+          if [[ "$BRANCH" == governance-changes/* ]]; then
+            echo "Branch '$BRANCH' is a governance-change branch — modifications are permitted."
+            exit 0
+          fi
+
+          echo "::error::Protected files were modified outside a governance-changes/* branch."
+          echo "To modify protected files, create a branch named governance-changes/<description>."
+          exit 1
+
+      # ── Secrets scanning (§Secret and credential handling) ─────────────
+      # §CI-Time Enforcement #5: Scans full git history for accidentally
+      # committed secrets using gitleaks. Version pinned with SHA-256
+      # integrity verification to prevent supply-chain attacks.
+      # To update: change GITLEAKS_VERSION and GITLEAKS_SHA256 in the
+      # job-level env block. To obtain the hash: download the release
+      # tar.gz and run sha256sum on it.
+      - name: Cache gitleaks archive
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/gitleaks-download
+          key: gitleaks-${{ runner.os }}-v${{ env.GITLEAKS_VERSION }}
+
+      - name: Scan for secrets
+        shell: bash
+        run: |
+          v="${GITLEAKS_VERSION}"
+          asset_name="gitleaks_${v}_linux_x64.tar.gz"
+          base_url="https://github.com/gitleaks/gitleaks/releases/download/v${v}"
+          download_dir="${HOME}/gitleaks-download"
+          archive_path="${download_dir}/${asset_name}"
+          checksums_path="${download_dir}/gitleaks_${v}_checksums.txt"
+
+          # Download only when not restored from actions/cache.
+          if [ ! -f "$archive_path" ]; then
+            mkdir -p "$download_dir"
+
+            # Retry helper for transient network errors (GitHub 5xx, timeouts).
+            download_with_retry() {
+              local url="$1" outfile="$2" max_retries=4
+              for attempt in $(seq 1 $max_retries); do
+                if curl -fsSL -o "$outfile" "$url" 2>/dev/null; then
+                  return 0
+                fi
+                if [ "$attempt" -eq "$max_retries" ]; then
+                  echo "::error::Download failed after $max_retries attempts: $url"
+                  return 1
+                fi
+                delay=$((2 ** attempt))
+                echo "  Download failed (attempt $attempt/$max_retries). Retrying in ${delay}s..."
+                sleep "$delay"
+              done
+            }
+
+            download_with_retry "${base_url}/${asset_name}" "$archive_path"
+            download_with_retry "${base_url}/gitleaks_${v}_checksums.txt" "$checksums_path"
+          else
+            echo "Using cached ${asset_name} (skipping download)"
+          fi
+
+          # Verify SHA-256 against the hash pinned in this workflow file.
+          actual_hash=$(sha256sum "$archive_path" | awk '{print toupper($1)}')
+          if [ "$actual_hash" != "$GITLEAKS_SHA256" ]; then
+            echo "::error::Hash mismatch for ${asset_name} — expected ${GITLEAKS_SHA256}, got ${actual_hash}"
+            exit 1
+          fi
+
+          # Cross-check against the release checksums file.
+          if [ -f "$checksums_path" ]; then
+            release_hash=$(grep "$asset_name" "$checksums_path" | awk '{print toupper($1)}')
+            if [ -n "$release_hash" ] && [ "$actual_hash" != "$release_hash" ]; then
+              echo "::error::Release checksums.txt disagrees — expected ${release_hash}, got ${actual_hash}"
+              exit 1
+            fi
+          fi
+          echo "Verified ${asset_name} (SHA-256: ${actual_hash})"
+
+          # Extract and run.
+          extract_path="${RUNNER_TEMP}/gitleaks"
+          mkdir -p "$extract_path"
+          tar -xzf "$archive_path" -C "$extract_path"
+          chmod +x "${extract_path}/gitleaks"
+          echo "Installed gitleaks v${v}"
+          "${extract_path}/gitleaks" detect --source . --verbose --log-opts='--all'
+
+      # ── Version injection (§Version traceability) ──────────────────────
+      # §CI-Time Enforcement #6: Generic — finds all files containing the
+      # <BUILD_VERSION> placeholder and replaces with tag+SHA or SHA-only.
+      # Repo-agnostic: works for any language. MUST run before any build,
+      # install, or test step.
+      - name: Inject build version
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          placeholder='<BUILD_VERSION>'
+          short_sha=$(git rev-parse --short HEAD)
+
+          # Resolve version: tag+SHA for tagged builds, SHA-only for untagged.
+          ref_name="${GITHUB_REF}"
+          if [[ "$ref_name" == refs/tags/* ]]; then
+            tag="${ref_name#refs/tags/}"
+            resolved_version="${tag}+${short_sha}"
+          else
+            resolved_version="${short_sha}"
+          fi
+
+          # Find all files containing the placeholder (exclude .git and binary files).
+          files_with_placeholder=$(grep -rl "$placeholder" --include='*.ps1' --include='*.psm1' --include='*.psd1' --include='*.py' --include='*.php' --include='*.sh' --include='*.bat' --include='*.yml' --include='*.yaml' --include='*.json' . 2>/dev/null | grep -v '.git/' || true)
+
+          if [ -z "$files_with_placeholder" ]; then
+            echo "No files contain the ${placeholder} placeholder — skipping version injection."
+            exit 0
+          fi
+
+          echo "Injecting version ${resolved_version} into:"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            sed -i "s|${placeholder}|${resolved_version}|g" "$file"
+            echo "  ${file}"
+          done <<< "$files_with_placeholder"
+          echo "Version injection complete."
+
+      # ── Suppression inventory (§CI-Time Enforcement #15) ───────────────
+      # Informational: counts suppression directives across all languages.
+      # An increase in suppressions triggers advisory review.
+      - name: Suppression inventory
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          echo "=== Suppression Inventory ==="
+          TOTAL=0
+          for pattern in \
+            '# noqa' '# type: ignore' '# pylint: disable' '# pragma: no cover' \
+            '// @ts-ignore' '// @ts-expect-error' '// eslint-disable' \
+            '@phpstan-ignore' '@psalm-suppress' \
+            '\[Diagnostics.CodeAnalysis.SuppressMessage'; do
+            COUNT=$(grep -r --include='*.py' --include='*.ts' --include='*.js' --include='*.php' --include='*.ps1' --include='*.psm1' \
+              -c "$pattern" . 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+            if [ "$COUNT" -gt 0 ]; then
+              echo "  $pattern: $COUNT"
+              TOTAL=$((TOTAL + COUNT))
+            fi
+          done
+          echo "  TOTAL: $TOTAL"
+          echo ""
+          echo "This is an informational inventory per §CI-Time Enforcement #15."
+          echo "An increase in suppressions triggers advisory review."
+
+      # ── PowerShell: Ensure PS module cache directory ───────────────────
+      - name: Ensure PS module cache directory exists
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        run: |
+          # On Linux, the user-writable PSModulePath entry is ~/.local/share/powershell/Modules.
+          $modPath = Join-Path $HOME '.local/share/powershell/Modules'
+          New-Item -ItemType Directory -Path $modPath -Force | Out-Null
+          Write-Host "Module cache path: $modPath"
+
+      # ── PowerShell: Cache PS modules ───────────────────────────────────
+      - name: Cache PS modules (Ubuntu)
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.local/share/powershell/Modules
+          key: ps-modules-${{ runner.os }}-pssa1.24.0
+
+      # ── PowerShell: Install PSScriptAnalyzer (integrity-verified) ──────
+      # §CI-Time Enforcement #10: SAST via PSScriptAnalyzer.
+      # Version and expected NuGet package hash are pinned. On update:
+      # 1. Change PSSA_VERSION and PSSA_SHA256 below.
+      # 2. To obtain the hash: Save-Module PSScriptAnalyzer -RequiredVersion <ver> -Path ./tmp
+      #    then (Get-FileHash ./tmp/PSScriptAnalyzer/<ver>/PSScriptAnalyzer.psd1 -Algorithm SHA256).Hash
+      - name: Install PSScriptAnalyzer
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        env:
+          PSSA_VERSION: '1.24.0'
+          PSSA_SHA256: 'B65F47EF115A4F68B562CA2ED749D3AAB48D16A478F30E30A43DF5D22BA54AC3'
+        run: |
+          $modName = 'PSScriptAnalyzer'
+          $modVer  = $env:PSSA_VERSION
+          if (Get-Module -ListAvailable $modName | Where-Object Version -eq $modVer) {
+              Write-Host "$modName $modVer already installed (cached)."
+          } else {
+              $tmpPath = Join-Path $env:RUNNER_TEMP 'ps-modules'
+              # Retry helper for transient network errors (PSGallery 5xx, timeouts).
+              for ([int]$attempt = 1; $attempt -le 4; $attempt++) {
+                  try {
+                      Save-Module -Name $modName -RequiredVersion $modVer -Path $tmpPath -Force -ErrorAction Stop
+                      break
+                  } catch {
+                      if ($attempt -eq 4) { throw }
+                      [int]$delay = [Math]::Pow(2, $attempt)
+                      Write-Host "  Save-Module failed (attempt $attempt/4): $($_.Exception.Message)"
+                      Write-Host "  Retrying in ${delay}s..."
+                      Start-Sleep -Seconds $delay
+                  }
+              }
+              $nupkgDir = Join-Path $tmpPath "$modName/$modVer"
+              if (-not (Test-Path $nupkgDir)) {
+                  Write-Error "Save-Module did not produce $nupkgDir — aborting."
+                  exit 1
+              }
+              # Compute a deterministic hash over the module manifest (the signed catalog
+              # root) to detect tampering.
+              $manifest = Join-Path $nupkgDir "$modName.psd1"
+              $actualHash = (Get-FileHash -Path $manifest -Algorithm SHA256).Hash
+              if ($env:PSSA_SHA256 -ne 'TO_BE_PINNED_ON_FIRST_CI_RUN' -and $actualHash -ne $env:PSSA_SHA256) {
+                  Write-Error "$modName $modVer hash mismatch — expected $($env:PSSA_SHA256), got $actualHash"
+                  exit 1
+              }
+              Write-Host "$modName $modVer SHA-256: $actualHash"
+
+              # Install from local path (no second download).
+              $destBase = Join-Path $HOME '.local/share/powershell/Modules'
+              $dest = Join-Path $destBase "$modName/$modVer"
+              New-Item -ItemType Directory -Path $dest -Force | Out-Null
+              Copy-Item -Path "$nupkgDir/*" -Destination $dest -Recurse -Force
+              if (-not (Get-Module -ListAvailable $modName | Where-Object Version -eq $modVer)) {
+                  Write-Error "Failed to install $modName $modVer — aborting."
+                  exit 1
+              }
+              Write-Host "Installed $modName $modVer (integrity verified)."
+          }
+
+      # ── PowerShell: Auto-format (§CI-Time Enforcement #10) ────────────
+      # Uses Invoke-Formatter with project settings if available.
+      # Detects and reports formatting drift; fails if drift is found.
+      - name: Auto-format PowerShell files
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        run: |
+          $settingsFile = '.PSScriptAnalyzerSettings.psd1'
+          $settings = if (Test-Path $settingsFile) { $settingsFile } else { $null }
+          $changed = 0
+          Get-ChildItem -Path . -Recurse -Include *.ps1, *.psm1, *.psd1 |
+              Where-Object { $_.FullName -notlike '*/.git/*' -and $_.FullName -notlike '*\.git\*' -and $_.FullName -notlike '*/vendor/*' -and $_.FullName -notlike '*\vendor\*' } |
+              ForEach-Object {
+                  $original = Get-Content -Path $_.FullName -Raw
+                  if (-not $original) { return }
+                  $formatParams = @{ ScriptDefinition = $original }
+                  if ($settings) { $formatParams['Settings'] = $settings }
+                  $formatted = Invoke-Formatter @formatParams
+                  if ($formatted -ne $original) {
+                      Set-Content -Path $_.FullName -Value $formatted -NoNewline
+                      Write-Host "  Formatted: $($_.FullName)"
+                      $changed++
+                  }
+              }
+          Write-Host "Invoke-Formatter: $changed file(s) reformatted."
+
+      # ── PowerShell: PSScriptAnalyzer [hard-gate] ──────────────────────
+      # §CI-Time Enforcement #10: SAST via PSScriptAnalyzer.
+      # SAST coverage (OWASP/CWE mapping):
+      #   Built-in rules:
+      #     PSAvoidUsingInvokeExpression      -> CWE-95 (code injection)
+      #     PSAvoidUsingConvertToSecureString  -> CWE-312 (cleartext storage)
+      #     PSAvoidUsingPlainTextForPassword   -> CWE-256 (plaintext credentials)
+      #     PSAvoidUsingUsernameAndPasswordParams -> CWE-798 (hardcoded creds)
+      #   Custom AST rules (tests/rules/*.psm1): loaded if present.
+      - name: Run PSScriptAnalyzer
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        run: |
+          $settingsFile = '.PSScriptAnalyzerSettings.psd1'
+          $params = @{ Path = '.'; Recurse = $true }
+          if (Test-Path $settingsFile) { $params['Settings'] = $settingsFile }
+
+          # Load custom SAST rules if they exist in the repo.
+          $customRules = Get-ChildItem -Path 'tests/rules' -Filter '*.psm1' -ErrorAction SilentlyContinue
+          if ($customRules) {
+            $params['CustomRulePath'] = $customRules.FullName
+            Write-Host "Custom SAST rules loaded: $($customRules.Name -join ', ')"
+          }
+
+          $results = Invoke-ScriptAnalyzer @params
+          if ($results) {
+            $results | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize
+            Write-Error "PSScriptAnalyzer found $($results.Count) issue(s)."
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: no issues found."
+
+      # ── Python: Setup and lint ─────────────────────────────────────────
+      # §CI-Time Enforcement #10: Python SAST via ruff/pylint/mypy.
+      # Conditional on language detection.
+      - name: Set up Python
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        shell: bash
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
 
-      - name: Compile check
+      - name: Python compile check
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        shell: bash
         run: |
           find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' \
             -exec python -m py_compile {} +
 
-      - name: Lint (informational)
-        continue-on-error: true
+      - name: Python lint
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        shell: bash
         run: |
-          if command -v pylint > /dev/null 2>&1; then
+          LINT_FAILED=0
+
+          # Prefer ruff (fast, comprehensive). Fall back to pylint.
+          if command -v ruff > /dev/null 2>&1; then
+            echo "Running ruff..."
+            ruff check . --exclude vendor --exclude .git || LINT_FAILED=1
+          elif command -v pylint > /dev/null 2>&1; then
+            echo "Running pylint..."
             find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' -not -path './tests/*' \
-              | xargs pylint --fail-under=0 || true
+              | xargs pylint --fail-under=0 || LINT_FAILED=1
           else
-            echo "pylint not installed — skipping"
+            echo "No Python linter installed (ruff or pylint) — skipping."
           fi
 
-      - name: Type check (informational)
-        continue-on-error: true
-        run: |
+          # Type checking with mypy if available.
           if command -v mypy > /dev/null 2>&1; then
+            echo "Running mypy..."
             find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' \
-              | xargs mypy --ignore-missing-imports || true
-          else
-            echo "mypy not installed — skipping"
+              | xargs mypy --ignore-missing-imports || LINT_FAILED=1
           fi
 
-      - name: Tests
-        continue-on-error: true
-        run: |
-          if command -v pytest > /dev/null 2>&1; then
-            pytest --tb=short || true
-          elif [ -d tests ] && find tests -name '*.py' | head -1 | grep -q .; then
-            python -m unittest discover -s tests || true
-          else
-            echo "No test framework detected — skipping"
+          if [ "$LINT_FAILED" -ne 0 ]; then
+            echo "::error::Python lint/type check found issues."
+            exit 1
           fi
+          echo "Python lint: no issues found."
 
-  powershell:
-    name: PowerShell checks
-    needs: detect
-    if: needs.detect.outputs.has-powershell == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Install test dependencies
-        shell: pwsh
-        run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -ListAvailable -Name Pester)) {
-            Install-Module Pester -Scope CurrentUser -Force
-          }
-          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
-            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
-          }
-
-      - name: Lint (PSScriptAnalyzer, informational)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          $files = Get-ChildItem -Recurse -Include *.ps1,*.psm1 -Exclude vendor
-          if ($files) {
-            if (Test-Path .PSScriptAnalyzerSettings.psd1) {
-              Invoke-ScriptAnalyzer -Path . -Recurse -Settings .PSScriptAnalyzerSettings.psd1
-            } else {
-              Invoke-ScriptAnalyzer -Path . -Recurse -ExcludeRule PSAvoidUsingWriteHost
-            }
-          } else {
-            Write-Host "No PowerShell files found — skipping"
-          }
-
-      - name: Tests (Pester)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          if (Test-Path tests) {
-            $config = New-PesterConfiguration
-            $config.Run.Path = 'tests'
-            $config.Run.Exit = $true
-            $config.Output.Verbosity = 'Detailed'
-            Invoke-Pester -Configuration $config
-          } else {
-            Write-Host "No tests/ directory found — skipping"
-          }
-
-  php:
-    name: PHP checks
-    needs: detect
-    if: needs.detect.outputs.has-php == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Syntax check
+      # ── PHP: Syntax check and lint ─────────────────────────────────────
+      # §CI-Time Enforcement #10: PHP syntax + static analysis.
+      - name: PHP syntax check
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-php == 'true'
+        shell: bash
         run: |
           ERRORS=0
           while IFS= read -r phpfile; do
@@ -191,86 +609,799 @@ jobs:
             echo "::error::PHP syntax errors found in $ERRORS file(s)"
             exit 1
           fi
+          echo "PHP syntax check: no errors."
 
-      - name: Lint (informational)
-        continue-on-error: true
+      - name: PHP lint
+        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-php == 'true'
+        shell: bash
         run: |
           if command -v phpstan > /dev/null 2>&1; then
             phpstan analyse || true
           else
-            echo "phpstan not installed — skipping"
+            echo "phpstan not installed — skipping."
+          fi
+          # Informational — always exit 0.
+
+      # ── SCA advisory check [informational] (§CI-Time Enforcement #8) ──
+      # Per-language advisory check against OSV.dev.
+      # Python: pip-audit if installed, else OSV.dev API query.
+      # PowerShell: OSV.dev query for pinned modules.
+      # Informational — does not block the build.
+      - name: SCA advisory check
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          ADVISORY_FOUND=0
+
+          # ── Python SCA ──
+          if [ "${{ needs.detect.outputs.has-python }}" = "true" ]; then
+            echo "=== Python SCA ==="
+            if command -v pip-audit > /dev/null 2>&1; then
+              echo "Running pip-audit..."
+              pip-audit --format json 2>/dev/null || {
+                echo "::notice::pip-audit found advisories or failed. Review output above."
+                ADVISORY_FOUND=1
+              }
+            elif [ -f requirements.txt ]; then
+              echo "pip-audit not available — querying OSV.dev for pinned packages..."
+              while IFS= read -r line; do
+                pkg=$(echo "$line" | sed -n 's/^\([a-zA-Z0-9_-]*\)==\([0-9.]*\).*/\1/p')
+                ver=$(echo "$line" | sed -n 's/^\([a-zA-Z0-9_-]*\)==\([0-9.]*\).*/\2/p')
+                [ -z "$pkg" ] && continue
+                response=$(curl -s -X POST 'https://api.osv.dev/v1/query' \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"version\":\"${ver}\",\"package\":{\"name\":\"${pkg}\",\"ecosystem\":\"PyPI\"}}" 2>/dev/null || true)
+                vulns=$(echo "$response" | grep -o '"id"' | wc -l)
+                if [ "$vulns" -gt 0 ]; then
+                  echo "::warning::${pkg} ${ver} has known advisories"
+                  ADVISORY_FOUND=1
+                else
+                  echo "  ${pkg} ${ver}: no known advisories"
+                fi
+              done < requirements.txt
+            else
+              echo "No requirements.txt and pip-audit not available — skipping Python SCA."
+            fi
+            echo ""
           fi
 
-  # =====================================================================
-  # Phase 3: Universal checks (all repos)
-  # =====================================================================
-
-  docs:
-    name: Documentation checks
-    needs: detect
-    if: needs.detect.outputs.has-docs == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Check markdown links (informational)
-        continue-on-error: true
-        run: |
-          # Basic check: find broken internal markdown links.
-          find . -name '*.md' -not -path './.git/*' | while read -r mdfile; do
-            grep -oP '\[.*?\]\((?!https?://)(.*?)\)' "$mdfile" | while read -r link; do
-              target=$(echo "$link" | sed 's/.*](\(.*\))/\1/' | sed 's/#.*//')
-              if [ -n "$target" ] && [ ! -f "$target" ] && [ ! -d "$target" ]; then
-                echo "WARNING: broken link in $mdfile: $target"
+          # ── PowerShell SCA ──
+          if [ "${{ needs.detect.outputs.has-powershell }}" = "true" ]; then
+            echo "=== PowerShell SCA ==="
+            # Check pinned PowerShell module versions against OSV.dev advisory database.
+            for mod_spec in "PSScriptAnalyzer:1.24.0:nuget" "Pester:5.7.1:nuget"; do
+              IFS=':' read -r name version ecosystem <<< "$mod_spec"
+              echo "Checking ${name} ${version} for known advisories..."
+              response=$(curl -s -X POST 'https://api.osv.dev/v1/query' \
+                -H 'Content-Type: application/json' \
+                -d "{\"version\":\"${version}\",\"package\":{\"name\":\"${name}\",\"ecosystem\":\"${ecosystem}\"}}" 2>/dev/null || true)
+              vulns=$(echo "$response" | grep -o '"id"' | wc -l)
+              if [ "$vulns" -gt 0 ]; then
+                echo "::warning::${name} ${version} has known advisories"
+                ADVISORY_FOUND=1
+              else
+                echo "  No known advisories."
               fi
             done
-          done
+            echo ""
+          fi
 
-  secrets:
-    name: Secrets scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Scan for secrets
-        run: |
-          FOUND=0
-          while IFS= read -r file; do
-            [ -f "$file" ] || continue
-            if grep -lqE "-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{82}" "$file" 2>/dev/null; then
-              echo "::error file=$file::Possible secret detected"
-              FOUND=1
+          # ── PHP SCA ──
+          if [ "${{ needs.detect.outputs.has-php }}" = "true" ]; then
+            echo "=== PHP SCA ==="
+            if [ -f composer.lock ]; then
+              if command -v composer > /dev/null 2>&1; then
+                composer audit 2>/dev/null || echo "::notice::composer audit found advisories or is not available."
+              else
+                echo "composer not available — skipping PHP SCA."
+              fi
+            else
+              echo "No composer.lock — skipping PHP SCA."
             fi
-          done < <(git diff --name-only --diff-filter=ACM "${{ github.event.pull_request.base.sha || 'HEAD~1' }}" HEAD 2>/dev/null || git ls-files)
-          if [ "$FOUND" -ne 0 ]; then
-            echo "::error::Secrets scanning detected potential secrets. Review flagged files."
+            echo ""
+          fi
+
+          if [ "$ADVISORY_FOUND" -ne 0 ]; then
+            echo ""
+            echo "::warning::One or more dependencies have known advisories. Review above."
+          else
+            echo ""
+            echo "SCA check passed: no known advisories for pinned dependencies."
+          fi
+          # Informational — always exit 0.
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Job 3: Test (per-language runner, needs: lint)
+  # Only runs when source-changed is true. PowerShell tests require
+  # Windows; Python and PHP tests run on Ubuntu.
+  # §CI-Time Enforcement #7: Tests with coverage enforcement.
+  # ════════════════════════════════════════════════════════════════════════
+  test:
+    name: Test
+    needs: [detect, lint]
+    # Skip draft PRs. Only run when source files actually changed.
+    if: |
+      (github.event_name == 'push' || github.event.pull_request.draft != true) &&
+      needs.detect.outputs.source-changed == 'true'
+    runs-on: ${{ (needs.detect.outputs.has-powershell == 'true') && 'windows-latest' || 'ubuntu-latest' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      # ── Version injection (duplicated — step outputs don't cross jobs) ─
+      # §CI-Time Enforcement #6: MUST run before any test step.
+      - name: Inject build version
+        shell: bash
+        run: |
+          placeholder='<BUILD_VERSION>'
+          short_sha=$(git rev-parse --short HEAD)
+
+          ref_name="${GITHUB_REF}"
+          if [[ "$ref_name" == refs/tags/* ]]; then
+            tag="${ref_name#refs/tags/}"
+            resolved_version="${tag}+${short_sha}"
+          else
+            resolved_version="${short_sha}"
+          fi
+
+          files_with_placeholder=$(grep -rl "$placeholder" --include='*.ps1' --include='*.psm1' --include='*.psd1' --include='*.py' --include='*.php' --include='*.sh' --include='*.bat' --include='*.yml' --include='*.yaml' --include='*.json' . 2>/dev/null | grep -v '.git/' || true)
+
+          if [ -z "$files_with_placeholder" ]; then
+            echo "No files contain the ${placeholder} placeholder — skipping version injection."
+            exit 0
+          fi
+
+          echo "Injecting version ${resolved_version} into:"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            sed -i "s|${placeholder}|${resolved_version}|g" "$file"
+            echo "  ${file}"
+          done <<< "$files_with_placeholder"
+          echo "Version injection complete."
+
+      # ── PowerShell: Cache and install modules (Windows) ────────────────
+      - name: Ensure PS module cache directory exists (Windows)
+        if: needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        run: |
+          $modPath = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell/Modules'
+          New-Item -ItemType Directory -Path $modPath -Force | Out-Null
+          Write-Host "Module cache path: $modPath"
+
+      - name: Cache PS modules (Windows)
+        if: needs.detect.outputs.has-powershell == 'true'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/Documents/PowerShell/Modules
+          key: ps-modules-${{ runner.os }}-pssa1.24.0-pester5.7.1
+
+      # ── PowerShell: Install PSScriptAnalyzer (needed for custom rule tests) ─
+      - name: Install PSScriptAnalyzer (Windows)
+        if: needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        env:
+          PSSA_VERSION: '1.24.0'
+          PSSA_SHA256: 'B65F47EF115A4F68B562CA2ED749D3AAB48D16A478F30E30A43DF5D22BA54AC3'
+        run: |
+          $modName = 'PSScriptAnalyzer'
+          $modVer  = $env:PSSA_VERSION
+          if (Get-Module -ListAvailable $modName | Where-Object Version -eq $modVer) {
+              Write-Host "$modName $modVer already installed (cached)."
+          } else {
+              $tmpPath = Join-Path $env:RUNNER_TEMP 'ps-modules'
+              for ([int]$attempt = 1; $attempt -le 4; $attempt++) {
+                  try {
+                      Save-Module -Name $modName -RequiredVersion $modVer -Path $tmpPath -Force -ErrorAction Stop
+                      break
+                  } catch {
+                      if ($attempt -eq 4) { throw }
+                      [int]$delay = [Math]::Pow(2, $attempt)
+                      Write-Host "  Save-Module failed (attempt $attempt/4): $($_.Exception.Message)"
+                      Write-Host "  Retrying in ${delay}s..."
+                      Start-Sleep -Seconds $delay
+                  }
+              }
+              $nupkgDir = Join-Path $tmpPath "$modName/$modVer"
+              if (-not (Test-Path $nupkgDir)) {
+                  Write-Error "Save-Module did not produce $nupkgDir — aborting."
+                  exit 1
+              }
+              $manifest = Join-Path $nupkgDir "$modName.psd1"
+              $actualHash = (Get-FileHash -Path $manifest -Algorithm SHA256).Hash
+              if ($env:PSSA_SHA256 -ne 'TO_BE_PINNED_ON_FIRST_CI_RUN' -and $actualHash -ne $env:PSSA_SHA256) {
+                  Write-Error "$modName $modVer hash mismatch — expected $($env:PSSA_SHA256), got $actualHash"
+                  exit 1
+              }
+              Write-Host "$modName $modVer SHA-256: $actualHash"
+
+              $destBase = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell/Modules'
+              $dest = Join-Path $destBase "$modName/$modVer"
+              New-Item -ItemType Directory -Path $dest -Force | Out-Null
+              Copy-Item -Path "$nupkgDir/*" -Destination $dest -Recurse -Force
+              if (-not (Get-Module -ListAvailable $modName | Where-Object Version -eq $modVer)) {
+                  Write-Error "Failed to install $modName $modVer — aborting."
+                  exit 1
+              }
+              Write-Host "Installed $modName $modVer (integrity verified)."
+          }
+
+      # ── PowerShell: Code signing (conditional) ────────────────────────
+      # §CI-Time Enforcement #9: Conditional on secrets.CODE_SIGNING_CERT_PFX.
+      - name: Sign scripts
+        if: needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        env:
+          SIGNING_CERT_PFX: ${{ secrets.CODE_SIGNING_CERT_PFX }}
+          SIGNING_CERT_PASS: ${{ secrets.CODE_SIGNING_CERT_PASS }}
+          SIGNING_CERT_THUMBPRINT: ${{ secrets.CODE_SIGNING_CERT_THUMBPRINT }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:SIGNING_CERT_PFX)) {
+              Write-Host "No signing certificate configured — skipping code signing."
+              exit 0
+          }
+          $pfxBytes = [Convert]::FromBase64String($env:SIGNING_CERT_PFX)
+          $pfxPath  = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+          [string]$thumbprint = ''
+          try {
+              $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                  $pfxPath,
+                  (ConvertTo-SecureString $env:SIGNING_CERT_PASS -AsPlainText -Force),
+                  [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+              $thumbprint = $cert.Thumbprint
+
+              # Verify the loaded certificate matches the pinned thumbprint.
+              if (-not [string]::IsNullOrEmpty($env:SIGNING_CERT_THUMBPRINT) -and $thumbprint -ne $env:SIGNING_CERT_THUMBPRINT) {
+                  Write-Error "Certificate thumbprint mismatch — expected $($env:SIGNING_CERT_THUMBPRINT), got $thumbprint. Aborting."
+                  exit 1
+              }
+              Write-Host "Certificate thumbprint verified."
+
+              # Install self-signed cert into Trusted Root so Set-AuthenticodeSignature
+              # can build a valid chain on the ephemeral runner.
+              $rootStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+                  [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+                  [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+              $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              $rootStore.Add($cert)
+              $rootStore.Close()
+              Write-Host "Installed signing cert ($thumbprint) into Trusted Root."
+
+              $signed = Get-ChildItem -Path src -Recurse -Include *.ps1,*.psm1,*.psd1 -Exclude *.Tests.ps1 |
+                  Set-AuthenticodeSignature -Certificate $cert
+              $signed | Format-Table -Property Path, Status -AutoSize
+              $failed = @($signed | Where-Object { $_.Status -ne 'Valid' })
+              if ($failed.Count -gt 0) {
+                  Write-Error "$($failed.Count) file(s) failed to sign."
+                  exit 1
+              }
+              Write-Host "Signed $($signed.Count) file(s) successfully."
+          } finally {
+              Remove-Item $pfxPath -Force -ErrorAction Ignore
+              if ($thumbprint) {
+                  $cleanupStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+                      [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+                      [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+                  $cleanupStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                  foreach ($c in $cleanupStore.Certificates) {
+                      if ($c.Thumbprint -eq $thumbprint) {
+                          $cleanupStore.Remove($c)
+                          Write-Host "Removed signing cert ($thumbprint) from Trusted Root."
+                      }
+                  }
+                  $cleanupStore.Close()
+              }
+          }
+
+      # ── PowerShell: Install Pester (integrity-verified) ────────────────
+      # §CI-Time Enforcement #7: Test execution with coverage.
+      - name: Install Pester
+        if: needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        env:
+          PESTER_VERSION: '5.7.1'
+          PESTER_SHA256: 'C6DCE1CDD85A9236A9A628DCAAF3E6F07B0AC4173FB25F620FA466F4402EC341'
+        run: |
+          $modName = 'Pester'
+          $modVer  = $env:PESTER_VERSION
+          if (Get-Module -ListAvailable $modName | Where-Object Version -eq $modVer) {
+              Write-Host "$modName $modVer already installed (cached)."
+          } else {
+              $tmpPath = Join-Path $env:RUNNER_TEMP 'ps-modules'
+              for ([int]$attempt = 1; $attempt -le 4; $attempt++) {
+                  try {
+                      Save-Module -Name $modName -RequiredVersion $modVer -Path $tmpPath -Force -ErrorAction Stop
+                      break
+                  } catch {
+                      if ($attempt -eq 4) { throw }
+                      [int]$delay = [Math]::Pow(2, $attempt)
+                      Write-Host "  Save-Module failed (attempt $attempt/4): $($_.Exception.Message)"
+                      Write-Host "  Retrying in ${delay}s..."
+                      Start-Sleep -Seconds $delay
+                  }
+              }
+              $nupkgDir = Join-Path $tmpPath "$modName/$modVer"
+              if (-not (Test-Path $nupkgDir)) {
+                  Write-Error "Save-Module did not produce $nupkgDir — aborting."
+                  exit 1
+              }
+              $manifest = Join-Path $nupkgDir "$modName.psd1"
+              $actualHash = (Get-FileHash -Path $manifest -Algorithm SHA256).Hash
+              if ($env:PESTER_SHA256 -ne 'TO_BE_PINNED_ON_FIRST_CI_RUN' -and $actualHash -ne $env:PESTER_SHA256) {
+                  Write-Error "$modName $modVer hash mismatch — expected $($env:PESTER_SHA256), got $actualHash"
+                  exit 1
+              }
+              Write-Host "$modName $modVer SHA-256: $actualHash"
+
+              $destBase = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell/Modules'
+              $dest = Join-Path $destBase "$modName/$modVer"
+              New-Item -ItemType Directory -Path $dest -Force | Out-Null
+              Copy-Item -Path "$nupkgDir/*" -Destination $dest -Recurse -Force
+              if (-not (Get-Module -ListAvailable $modName | Where-Object Version -eq $modVer)) {
+                  Write-Error "Failed to install $modName $modVer — aborting."
+                  exit 1
+              }
+              Write-Host "Installed $modName $modVer (integrity verified)."
+          }
+
+      # ── PowerShell: Run Pester tests ───────────────────────────────────
+      # §CI-Time Enforcement #7: Pester with JaCoCo coverage output.
+      # Coverage paths are auto-discovered from src/ — repo-agnostic.
+      - name: Run Pester tests
+        if: needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'tests')) {
+            Write-Host "No tests directory found — skipping."
+            exit 0
+          }
+          $config = New-PesterConfiguration
+          $config.Run.Path = @('tests')
+          $config.Output.Verbosity = 'Detailed'
+          $config.Run.Exit = $true
+          $config.CodeCoverage.Enabled = $true
+
+          # Auto-discover coverage paths: all .psm1 and .ps1 files under src/
+          # (excluding test files). Repo-agnostic — each repo's src/ layout is
+          # automatically covered.
+          $coveragePaths = @(Get-ChildItem -Path 'src' -Recurse -Include '*.psm1', '*.ps1' -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notlike '*.Tests.ps1' } |
+              ForEach-Object { $_.FullName })
+          if ($coveragePaths.Count -gt 0) {
+            $config.CodeCoverage.Path = $coveragePaths
+            Write-Host "Coverage paths ($($coveragePaths.Count) files):"
+            $coveragePaths | ForEach-Object { Write-Host "  $_" }
+          } else {
+            Write-Host "No source files found under src/ — coverage will be empty."
+          }
+
+          $config.CodeCoverage.OutputFormat = 'JaCoCo'
+          $config.CodeCoverage.OutputPath = 'coverage.xml'
+          $config.TestResult.Enabled      = $true
+          $config.TestResult.OutputFormat  = 'JUnitXml'
+          $config.TestResult.OutputPath    = './testResults.xml'
+          Invoke-Pester -Configuration $config
+
+      # ── Python: Setup and test ─────────────────────────────────────────
+      # §CI-Time Enforcement #7: pytest with coverage.
+      - name: Set up Python (test)
+        if: needs.detect.outputs.has-python == 'true' && needs.detect.outputs.has-powershell != 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies (test)
+        if: needs.detect.outputs.has-python == 'true'
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
+
+      - name: Run Python tests
+        if: needs.detect.outputs.has-python == 'true'
+        shell: bash
+        run: |
+          if command -v pytest > /dev/null 2>&1; then
+            echo "Running pytest with coverage..."
+            if python -c "import pytest_cov" 2>/dev/null; then
+              pytest --tb=short --junitxml=testResults-python.xml --cov --cov-report=xml:coverage-python.xml || true
+            else
+              pytest --tb=short --junitxml=testResults-python.xml || true
+            fi
+          elif [ -d tests ] && find tests -name '*.py' | head -1 | grep -q .; then
+            echo "Running unittest..."
+            python -m unittest discover -s tests 2>&1 || true
+          else
+            echo "No Python test framework detected — skipping."
+          fi
+
+      # ── PHP: Test ──────────────────────────────────────────────────────
+      # §CI-Time Enforcement #7: PHPUnit tests.
+      - name: Run PHP tests
+        if: needs.detect.outputs.has-php == 'true'
+        shell: bash
+        run: |
+          if command -v phpunit > /dev/null 2>&1; then
+            phpunit --log-junit testResults-php.xml || true
+          elif [ -f vendor/bin/phpunit ]; then
+            vendor/bin/phpunit --log-junit testResults-php.xml || true
+          else
+            echo "No PHP test runner found — skipping."
+          fi
+
+      # ── Coverage enforcement (§CI-Time Enforcement #7) ─────────────────
+      # Threshold from vars.COVERAGE_THRESHOLD repo variable.
+      # Default behavior: informational (skip enforcement if not set).
+      - name: Enforce code coverage threshold
+        if: needs.detect.outputs.has-powershell == 'true'
+        shell: pwsh
+        env:
+          COVERAGE_THRESHOLD: ${{ vars.COVERAGE_THRESHOLD }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:COVERAGE_THRESHOLD)) {
+            Write-Host "COVERAGE_THRESHOLD not configured — coverage enforcement skipped (informational mode)."
+            if (Test-Path './coverage.xml') {
+              [xml]$report = Get-Content ./coverage.xml
+              $counter = $report.report.counter | Where-Object { $_.type -eq 'INSTRUCTION' }
+              if ($counter) {
+                [int]$covered = $counter.covered
+                [int]$missed  = $counter.missed
+                [int]$total   = $covered + $missed
+                if ($total -gt 0) {
+                  [double]$percent = [math]::Round(($covered / $total) * 100, 2)
+                  Write-Host "Code coverage: ${percent}% ($covered of $total commands)"
+                }
+              }
+            }
+            exit 0
+          }
+
+          # Fail-closed: missing report means enforcement cannot verify coverage.
+          if (-not (Test-Path './coverage.xml')) {
+            Write-Error "coverage.xml not found — cannot enforce coverage threshold."
+            exit 1
+          }
+          [xml]$report = Get-Content ./coverage.xml
+          # Pester JaCoCo reports command-level coverage as INSTRUCTION counters.
+          $counter = $report.report.counter | Where-Object { $_.type -eq 'INSTRUCTION' }
+          if (-not $counter) {
+            Write-Error "No INSTRUCTION counter in coverage report — cannot enforce threshold."
+            exit 1
+          }
+          [int]$covered = $counter.covered
+          [int]$missed  = $counter.missed
+          [int]$total   = $covered + $missed
+          if ($total -eq 0) {
+            Write-Error "Zero commands measured — cannot enforce threshold."
+            exit 1
+          }
+          [double]$percent = [math]::Round(($covered / $total) * 100, 2)
+          [int]$threshold  = $env:COVERAGE_THRESHOLD
+          Write-Host "Code coverage: ${percent}% ($covered of $total commands)"
+          Write-Host "Threshold:     ${threshold}%"
+          if ($percent -lt $threshold) {
+            Write-Error "Code coverage ${percent}% is below the required ${threshold}%. See coverage.xml for details."
+            exit 1
+          }
+          Write-Host "Coverage gate passed."
+
+      # ── Python coverage enforcement ────────────────────────────────────
+      - name: Enforce Python coverage threshold
+        if: needs.detect.outputs.has-python == 'true'
+        shell: bash
+        env:
+          COVERAGE_THRESHOLD: ${{ vars.COVERAGE_THRESHOLD }}
+        run: |
+          if [ -z "$COVERAGE_THRESHOLD" ]; then
+            echo "COVERAGE_THRESHOLD not configured — coverage enforcement skipped (informational mode)."
+            if [ -f coverage-python.xml ]; then
+              echo "Coverage report generated. Review coverage-python.xml for details."
+            fi
+            exit 0
+          fi
+
+          if [ ! -f coverage-python.xml ]; then
+            echo "coverage-python.xml not found — cannot enforce coverage threshold."
             exit 1
           fi
 
-  suppressions:
-    name: Suppression inventory
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+          # Parse Cobertura XML for line rate.
+          line_rate=$(grep -oP 'line-rate="\K[^"]+' coverage-python.xml | head -1)
+          if [ -z "$line_rate" ]; then
+            echo "::error::Cannot parse line-rate from coverage-python.xml"
+            exit 1
+          fi
+          percent=$(echo "$line_rate * 100" | bc -l 2>/dev/null | xargs printf "%.2f" 2>/dev/null || echo "unknown")
+          echo "Code coverage: ${percent}%"
+          echo "Threshold:     ${COVERAGE_THRESHOLD}%"
 
-      - name: Count suppression directives (informational)
-        continue-on-error: true
+          if [ "$(echo "$line_rate * 100 < $COVERAGE_THRESHOLD" | bc -l 2>/dev/null)" = "1" ]; then
+            echo "::error::Code coverage ${percent}% is below the required ${COVERAGE_THRESHOLD}%."
+            exit 1
+          fi
+          echo "Coverage gate passed."
+
+      # ── Publish test summary ───────────────────────────────────────────
+      # §CI-Time Enforcement #12: JUnit XML results in step summary.
+      - name: Publish Test Summary
+        if: always()
+        shell: bash
         run: |
-          echo "=== Suppression Inventory ==="
-          TOTAL=0
-          for pattern in \
-            '# noqa' '# type: ignore' '# pylint: disable' '# pragma: no cover' \
-            '// @ts-ignore' '// @ts-expect-error' '// eslint-disable' \
-            '@phpstan-ignore' '@psalm-suppress' \
-            '\[Diagnostics.CodeAnalysis.SuppressMessage'; do
-            COUNT=$(grep -r --include='*.py' --include='*.ts' --include='*.js' --include='*.php' --include='*.ps1' \
-              -c "$pattern" . 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
-            if [ "$COUNT" -gt 0 ]; then
-              echo "  $pattern: $COUNT"
-              TOTAL=$((TOTAL + COUNT))
-            fi
+          for results_file in testResults.xml testResults-python.xml testResults-php.xml; do
+            if [ ! -f "$results_file" ]; then continue; fi
+
+            echo "## Test Results: ${results_file}" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+
+            # Extract totals from JUnit XML.
+            tests=$(grep -oP 'tests="\K[^"]+' "$results_file" | head -1 || echo "0")
+            failures=$(grep -oP 'failures="\K[^"]+' "$results_file" | head -1 || echo "0")
+            errors=$(grep -oP 'errors="\K[^"]+' "$results_file" | head -1 || echo "0")
+            skipped=$(grep -oP 'skipped="\K[^"]+' "$results_file" | head -1 || echo "0")
+            passed=$((tests - failures - errors - skipped))
+
+            echo "| Passed | Failed | Errors | Skipped | Total |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|--------|--------|---------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| ${passed} | ${failures} | ${errors} | ${skipped} | ${tests} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
           done
-          echo "  TOTAL: $TOTAL"
-          echo ""
-          echo "This is an informational inventory per CI req 15."
-          echo "An increase in suppressions triggers advisory review."
+
+      # ── Upload test results ────────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: test-results
+          path: |
+            testResults.xml
+            testResults-python.xml
+            testResults-php.xml
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # ── Upload coverage ────────────────────────────────────────────────
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            coverage-python.xml
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Job 4: Compliance (Ubuntu — documentation, licensing, SBOM)
+  # Informational checks that do not block the build. Feature-detected:
+  # runs repo-specific scripts if present, otherwise generic implementations.
+  # §CI-Time Enforcement #12-#14: Doc coverage, license, SBOM.
+  # ════════════════════════════════════════════════════════════════════════
+  compliance:
+    name: Compliance
+    needs: [detect]
+    # Skip draft PRs.
+    if: github.event_name == 'push' || github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # ── Documentation coverage [informational] (§CI-Time Enforcement #12) ─
+      # Generic per-language checks. No repo-specific scripts.
+      - name: Documentation coverage
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          echo "=== Documentation Coverage ==="
+
+          DOC_TOTAL=0
+          DOC_COVERED=0
+
+          # PowerShell: check for .SYNOPSIS in functions.
+          if [ "${{ needs.detect.outputs.has-powershell }}" = "true" ]; then
+            echo "--- PowerShell .SYNOPSIS check ---"
+            while IFS= read -r psfile; do
+              [ -z "$psfile" ] && continue
+              funcs=$(grep -cP '^\s*function\s+' "$psfile" 2>/dev/null || echo 0)
+              synopses=$(grep -cP '^\s*\.SYNOPSIS' "$psfile" 2>/dev/null || echo 0)
+              DOC_TOTAL=$((DOC_TOTAL + funcs))
+              DOC_COVERED=$((DOC_COVERED + synopses))
+              if [ "$funcs" -gt 0 ] && [ "$synopses" -lt "$funcs" ]; then
+                echo "  $psfile: $synopses/$funcs documented"
+              fi
+            done < <(find . \( -name '*.ps1' -o -name '*.psm1' \) -not -path './vendor/*' -not -path './.git/*' -not -name '*.Tests.ps1')
+          fi
+
+          # Python: use interrogate if available, else basic docstring check.
+          if [ "${{ needs.detect.outputs.has-python }}" = "true" ]; then
+            echo "--- Python docstring check ---"
+            if command -v interrogate > /dev/null 2>&1; then
+              interrogate -v . --exclude vendor --exclude .git || true
+            else
+              while IFS= read -r pyfile; do
+                [ -z "$pyfile" ] && continue
+                defs=$(grep -cP '^\s*(def|class)\s+' "$pyfile" 2>/dev/null || echo 0)
+                docs=$(grep -cP '^\s*"""' "$pyfile" 2>/dev/null || echo 0)
+                DOC_TOTAL=$((DOC_TOTAL + defs))
+                DOC_COVERED=$((DOC_COVERED + docs / 2))  # opening + closing = 1 docstring
+                if [ "$defs" -gt 0 ]; then
+                  echo "  $pyfile: ~$((docs / 2))/$defs documented"
+                fi
+              done < <(find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' -not -path './tests/*')
+            fi
+          fi
+
+          if [ "$DOC_TOTAL" -gt 0 ]; then
+            percent=$((DOC_COVERED * 100 / DOC_TOTAL))
+            echo ""
+            echo "Overall doc coverage: ${percent}% (${DOC_COVERED}/${DOC_TOTAL})"
+          else
+            echo "No documentable functions/classes found."
+          fi
+          # Informational — always exit 0.
+
+      # ── License compliance [informational] (§CI-Time Enforcement #13) ──
+      # Per-language license checking. Informational — does not block.
+      - name: License compliance
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          echo "=== License Compliance ==="
+          ALLOWLIST="MIT Apache-2.0 BSD-2-Clause BSD-3-Clause ISC Unlicense"
+          ALL_COMPLIANT=true
+
+          # Python: pip-licenses if installed.
+          if [ "${{ needs.detect.outputs.has-python }}" = "true" ]; then
+            echo "--- Python licenses ---"
+            if command -v pip-licenses > /dev/null 2>&1; then
+              pip-licenses --format=table || true
+            else
+              echo "pip-licenses not installed — skipping Python license check."
+            fi
+          fi
+
+          # PowerShell: module manifest LicenseUri check.
+          if [ "${{ needs.detect.outputs.has-powershell }}" = "true" ]; then
+            echo "--- PowerShell module licenses ---"
+            # Install pwsh modules first for license check (uses cached if available).
+            pwsh -Command '
+              $allowlist = @("MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unlicense")
+              $modules = @("PSScriptAnalyzer", "Pester")
+              $allCompliant = $true
+
+              foreach ($modName in $modules) {
+                $mod = Get-Module -ListAvailable $modName -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $mod) {
+                  Write-Host "::notice::Module $modName not found — cannot check license."
+                  continue
+                }
+
+                $manifest = $null
+                $psd1Path = Join-Path (Split-Path $mod.Path) "$modName.psd1"
+                if (Test-Path $psd1Path) {
+                  $manifest = Import-PowerShellDataFile $psd1Path
+                }
+
+                $licenseUri = ""
+                if ($manifest -and $manifest.PrivateData -and $manifest.PrivateData.PSData) {
+                  $licenseUri = $manifest.PrivateData.PSData.LicenseUri
+                }
+
+                $detectedLicense = "Unknown"
+                if ($licenseUri -match "mit|MIT") { $detectedLicense = "MIT" }
+                elseif ($licenseUri -match "apache|Apache") { $detectedLicense = "Apache-2.0" }
+                elseif ($licenseUri -match "bsd") { $detectedLicense = "BSD" }
+
+                $status = if ($detectedLicense -ne "Unknown" -and ($allowlist | Where-Object { $detectedLicense -like "$_*" })) {
+                  "OK"
+                } else {
+                  $allCompliant = $false
+                  "REVIEW"
+                }
+
+                Write-Host "$modName $($mod.Version): $detectedLicense ($status) [$licenseUri]"
+              }
+
+              if ($allCompliant) {
+                Write-Host ""
+                Write-Host "License compliance: all dependencies use allowlisted licenses."
+              } else {
+                Write-Host ""
+                Write-Host "::notice::Some dependencies need license review. See above."
+              }
+            ' || true
+          fi
+
+          # PHP: composer licenses if available.
+          if [ "${{ needs.detect.outputs.has-php }}" = "true" ]; then
+            echo "--- PHP licenses ---"
+            if command -v composer > /dev/null 2>&1 && [ -f composer.lock ]; then
+              composer licenses 2>/dev/null || true
+            else
+              echo "composer not available or no composer.lock — skipping PHP license check."
+            fi
+          fi
+          # Informational — always exit 0.
+
+      # ── SBOM generation [informational] (§CI-Time Enforcement #14) ─────
+      # Generic SBOM: lists all tracked files with hashes and detected
+      # dependencies. Covers all languages without repo-specific scripts.
+      - name: Generate SBOM
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          echo '{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[' > sbom.cdx.json
+          FIRST=true
+
+          # Python dependencies.
+          if [ "${{ needs.detect.outputs.has-python }}" = "true" ]; then
+            for req in requirements.txt requirements-dev.txt; do
+              if [ -f "$req" ]; then
+                while IFS= read -r line; do
+                  line=$(echo "$line" | sed 's/#.*//' | tr -d '[:space:]')
+                  [ -z "$line" ] && continue
+                  [[ "$line" == -* ]] && continue
+                  name=$(echo "$line" | sed 's/[>=<!\[].*//;s/\s.*//')
+                  version=$(echo "$line" | grep -oP '==\K[^,;]+' || echo "unspecified")
+                  if [ "$FIRST" = true ]; then FIRST=false; else echo ',' >> sbom.cdx.json; fi
+                  echo "{\"type\":\"library\",\"name\":\"$name\",\"version\":\"$version\",\"purl\":\"pkg:pypi/$name@$version\"}" >> sbom.cdx.json
+                done < "$req"
+              fi
+            done
+          fi
+
+          # PowerShell dependencies (pinned in CI env vars).
+          if [ "${{ needs.detect.outputs.has-powershell }}" = "true" ]; then
+            for mod in "PSScriptAnalyzer:1.24.0" "Pester:5.7.1"; do
+              name="${mod%%:*}"
+              version="${mod##*:}"
+              if [ "$FIRST" = true ]; then FIRST=false; else echo ',' >> sbom.cdx.json; fi
+              echo "{\"type\":\"library\",\"name\":\"$name\",\"version\":\"$version\",\"purl\":\"pkg:nuget/$name@$version\"}" >> sbom.cdx.json
+            done
+          fi
+
+          echo ']}' >> sbom.cdx.json
+          echo "Generated SBOM with $(grep -c '"type"' sbom.cdx.json) components."
+
+      - name: Upload SBOM
+        if: needs.detect.outputs.code-changed == 'true'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # ── Integrity manifest (§Script integrity verification) ────────────
+      # Produces checksums.sha256 from the current (version-injected,
+      # optionally signed) file state. Provides a release-ready artifact
+      # for tamper detection and release verification.
+      - name: Generate integrity manifest
+        if: needs.detect.outputs.code-changed == 'true'
+        shell: bash
+        run: |
+          # Hash all tracked source files, excluding .git and vendor.
+          find . -type f \
+            -not -path './.git/*' \
+            -not -path './vendor/*' \
+            -not -name 'checksums.sha256' \
+            | sort \
+            | xargs sha256sum > checksums.sha256
+          echo "Generated checksums.sha256 with $(wc -l < checksums.sha256) entries."
+
+      - name: Upload integrity manifest
+        if: needs.detect.outputs.code-changed == 'true'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: integrity-manifest
+          path: checksums.sha256
+          retention-days: 30
+          if-no-files-found: ignore
