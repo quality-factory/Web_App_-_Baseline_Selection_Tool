@@ -31,7 +31,7 @@ body:
     id: workflow
     attributes:
       label: Workflow checklist
-      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Bugs may skip statuses 2–6 when the fix is self-evident (HM documents skip rationale). Items marked (CR only) or (CR/Refactoring) are skipped for bugs."
+      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Bugs may skip statuses 2–7 when the fix is self-evident (HM documents skip rationale). Items marked (CR only) or (CR/Refactoring) are skipped for bugs."
       value: |
         ### 1. Triage intake
         - [ ] 1a. Problem statement written
@@ -42,7 +42,7 @@ body:
         ### 2. Design function
         - [ ] 2h. functional-design.md section: Scope defined (in/out with reasoning per item to prevent repeated assessment)
         - [ ] 2i. functional-design.md section: Open questions resolved
-        - [ ] 2j. HM approved **(HM)**
+        - [ ] 2k. HM approved **(HM)**
 
         ### 3. Validate function
         - [ ] 3a. Design reviewed against codebase evidence
@@ -51,34 +51,39 @@ body:
 
         ### 4. Design solution
         - [ ] 4a. architecture.md section: Bounded architecture slice declared (modules permitted, modules excluded, cooperating interfaces)
-        - [ ] 4i. HM approved **(HM)**
+        - [ ] 4j. HM approved **(HM)**
 
-        ### 5. Plan implementation
-        - [ ] 5d. Effort estimated
-        - [ ] 5e. Board issues created/updated/deleted
-        - [ ] 5f. In-flight change registry checked
-        - [ ] 5g. HM approved **(HM)**
+        ### 5. Validate solution
+        - [ ] 5a. Architecture reviewed against codebase evidence
+        - [ ] 5b. Completeness assessed (all status 4 deliverables)
+        - [ ] 5c. HM approved **(HM)**
 
-        ### 6. Validate plan
-        - [ ] 6a. Plan completeness verified
-        - [ ] 6b. Collision check performed against in-flight registry
-        - [ ] 6c. HM approved **(HM)**
+        ### 6. Plan implementation
+        - [ ] 6d. Effort estimated
+        - [ ] 6e. Board issues created/updated/deleted
+        - [ ] 6f. In-flight change registry checked
+        - [ ] 6g. HM approved **(HM)**
 
-        ### 7. Implement changes
-        - [ ] 7a. Code completed (all plan-manifest functions implemented)
-        - [ ] 7b. Test coverage verified (100% statement coverage on modules in coverage scope)
-        - [ ] 7c. Documentation updated (README.md, architecture.md, operations.md as applicable)
-        - [ ] 7d. Local enforcement checks passed
-        - [ ] 7e. PR created
+        ### 7. Validate plan
+        - [ ] 7a. Plan completeness verified
+        - [ ] 7b. Collision check performed against in-flight registry
+        - [ ] 7c. HM approved **(HM)**
 
-        ### 8. Review delivery
-        - [ ] 8a. CI passed
-        - [ ] 8b. Gemini review handled (each comment addressed or dismissed with rationale, marked resolved)
-        - [ ] 8c. PR merged
-        - [ ] 8d. Release workflow passed (if applicable)
-        - [ ] 8e. /_repo-check passed
-        - [ ] 8f. Delivery accepted **(HM)** (UAT result + decision record in PR description: what, why, edge cases handled/deferred, risks)
-        - [ ] 8g. In-flight registry entry removed
-        - [ ] 8h. Branch deleted
+        ### 8. Implement changes
+        - [ ] 8a. Code completed (all plan-manifest functions implemented)
+        - [ ] 8b. Test coverage verified (100% statement coverage on modules in coverage scope)
+        - [ ] 8c. Documentation updated (README.md, architecture.md, operations.md as applicable)
+        - [ ] 8d. Local enforcement checks passed
+        - [ ] 8e. PR created
+
+        ### 9. Validate implementation
+        - [ ] 9a. CI passed
+        - [ ] 9b. Gemini review handled (each comment addressed or dismissed with rationale, marked resolved)
+        - [ ] 9c. PR merged
+        - [ ] 9d. Release workflow passed (if applicable)
+        - [ ] 9e. /_repo-check passed
+        - [ ] 9f. Delivery accepted **(HM)** (UAT result + decision record in PR description: what, why, edge cases handled/deferred, risks)
+        - [ ] 9g. In-flight registry entry removed
+        - [ ] 9h. Branch deleted
     validations:
       required: false

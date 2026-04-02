@@ -2,24 +2,26 @@ name: PR Title
 
 on:
   pull_request:
-    types: [opened, edited, synchronize]
-
-permissions:
-  contents: read
+    types: [opened, edited, synchronize, reopened]
 
 jobs:
-  check-title:
+  check:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
       - name: Validate PR title
-        shell: bash
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          TITLE: ${{ github.event.pull_request.title }}
         run: |
-          pattern='^(feat|fix|refactor|test|ci|docs|chore)(\(.+\))?: .+'
-          if [[ ! "$PR_TITLE" =~ $pattern ]]; then
-            echo "::error::PR title must match conventional commit format: type(scope): description"
+          set -euo pipefail
+
+          if ! echo "$TITLE" | grep -qE '^(feat|fix|refactor|test|ci|docs|chore)(\([^)]+\))?!?:'; then
+            echo "::error::PR title must follow conventional commit format: type(scope): description"
             echo "Valid types: feat, fix, refactor, test, ci, docs, chore"
-            echo "Got: $PR_TITLE"
             exit 1
           fi
