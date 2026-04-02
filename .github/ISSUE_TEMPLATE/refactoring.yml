@@ -22,57 +22,48 @@ body:
       label: Workflow checklist
       description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Refactoring skips statuses 2–3 (functional design unchanged)."
       value: |
-        ### 1. Triage intake
+        ### 1. Triage
         - [ ] 1a. Problem statement written
         - [ ] 1b. Relevance confirmed (not duplicate, not obsolete, not out of scope)
         - [ ] 1c. Type set (Bug, CR, or Refactoring)
         - [ ] 1d. Priority set
 
-        ### 2. Design function
+        ### 2. Author FD
         _Skipped for Refactoring — functional design unchanged._
 
-        ### 3. Validate function
+        ### 3. Review FD
         _Skipped for Refactoring — functional design unchanged._
 
-        ### 4. Design solution
-        - [ ] 4a. architecture.md section: Bounded architecture slice declared (modules permitted, modules excluded, cooperating interfaces)
-        - [ ] 4b. architecture.md section: Component responsibilities documented
-        - [ ] 4c. architecture.md section: Data flow documented
-        - [ ] 4d. architecture.md section: Public interfaces documented
-        - [ ] 4e. architecture.md section: Failure-mode inventory enumerated
-        - [ ] 4f. architecture.md section: Design alternatives evaluated (if non-trivial; at least one alternative with trade-off rationale)
-        - [ ] 4g. architecture.md section: Function manifest completed (all functions from architecture mapped to implementation units)
-        - [ ] 4h. operations.md created or updated
-        - [ ] 4i. architecture.md section: Security-by-design assessment documented (threat model, trust boundary enforcement, secret management, dependency policy, attack surface minimization, input/output validation)
-        - [ ] 4j. HM approved **(HM)**
+        ### 4. Author TD
+        - [ ] 4a. architecture.md + operations.md produced (per current template)
+        - [ ] 4b. HM approved **(HM)**
 
-        ### 5. Validate solution
-        - [ ] 5a. Architecture reviewed against codebase evidence
-        - [ ] 5b. Completeness assessed (all status 4 deliverables)
-        - [ ] 5c. HM approved **(HM)**
+        ### 5. Review TD
+        - [ ] 5a. architecture.md + operations.md validated (per current template)
+        - [ ] 5b. HM approved **(HM)**
 
-        ### 6. Plan implementation
-        - [ ] 6a. Dependencies mapped between implementation units
-        - [ ] 6b. Critical path identified
-        - [ ] 6c. Feasibility verified
+        ### 6. Author plan
+        - [ ] 6a. (CR/Refactoring) Dependencies mapped between implementation units
+        - [ ] 6b. (CR/Refactoring) Critical path identified
+        - [ ] 6c. (CR/Refactoring) Feasibility verified
         - [ ] 6d. Effort estimated
         - [ ] 6e. Board issues created/updated/deleted
         - [ ] 6f. In-flight change registry checked
         - [ ] 6g. HM approved **(HM)**
 
-        ### 7. Validate plan
+        ### 7. Review plan
         - [ ] 7a. Plan completeness verified
         - [ ] 7b. Collision check performed against in-flight registry
         - [ ] 7c. HM approved **(HM)**
 
-        ### 8. Implement changes
+        ### 8. Author impl
         - [ ] 8a. Code completed (all plan-manifest functions implemented)
         - [ ] 8b. Test coverage verified (100% statement coverage on modules in coverage scope)
         - [ ] 8c. Documentation updated (README.md, architecture.md, operations.md as applicable)
         - [ ] 8d. Local enforcement checks passed
         - [ ] 8e. PR created
 
-        ### 9. Validate implementation
+        ### 9. Review impl
         - [ ] 9a. CI passed
         - [ ] 9b. Gemini review handled (each comment addressed or dismissed with rationale, marked resolved)
         - [ ] 9c. PR merged
