@@ -31,52 +31,55 @@ body:
     id: workflow
     attributes:
       label: Workflow checklist
-      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Bugs may skip statuses 2–7 when the fix is self-evident (HM documents skip rationale). Items marked (CR only) or (CR/Refactoring) are skipped for bugs."
+      description: "Issue lifecycle tracking (see workflow-reference.md §Workflow checklist). Bugs may skip statuses 2–7 when the fix is self-evident (HM documents skip rationale)."
       value: |
-        ### 1. Triage intake
+        ### 1. Triage
         - [ ] 1a. Problem statement written
         - [ ] 1b. Relevance confirmed (not duplicate, not obsolete, not out of scope)
         - [ ] 1c. Type set (Bug, CR, or Refactoring)
         - [ ] 1d. Priority set
 
-        ### 2. Design function
-        - [ ] 2h. functional-design.md section: Scope defined (in/out with reasoning per item to prevent repeated assessment)
-        - [ ] 2i. functional-design.md section: Open questions resolved
-        - [ ] 2k. HM approved **(HM)**
+        ### 2. Author FD
+        _May be skipped for bugs when the fix is self-evident (HM documents skip rationale)._
+        - [ ] 2a. functional-design.md produced (per current template)
+        - [ ] 2b. HM approved **(HM)**
 
-        ### 3. Validate function
-        - [ ] 3a. Design reviewed against codebase evidence
-        - [ ] 3b. Completeness assessed (all status 2 deliverables)
-        - [ ] 3c. HM approved **(HM)**
+        ### 3. Review FD
+        _May be skipped for bugs when the fix is self-evident (HM documents skip rationale)._
+        - [ ] 3a. functional-design.md validated (per current template)
+        - [ ] 3b. HM approved **(HM)**
 
-        ### 4. Design solution
-        - [ ] 4a. architecture.md section: Bounded architecture slice declared (modules permitted, modules excluded, cooperating interfaces)
-        - [ ] 4j. HM approved **(HM)**
+        ### 4. Author TD
+        _May be skipped for bugs when the fix is self-evident (HM documents skip rationale)._
+        - [ ] 4a. architecture.md + operations.md produced (per current template)
+        - [ ] 4b. HM approved **(HM)**
 
-        ### 5. Validate solution
-        - [ ] 5a. Architecture reviewed against codebase evidence
-        - [ ] 5b. Completeness assessed (all status 4 deliverables)
-        - [ ] 5c. HM approved **(HM)**
+        ### 5. Review TD
+        _May be skipped for bugs when the fix is self-evident (HM documents skip rationale)._
+        - [ ] 5a. architecture.md + operations.md validated (per current template)
+        - [ ] 5b. HM approved **(HM)**
 
-        ### 6. Plan implementation
+        ### 6. Author plan
+        _May be skipped for bugs when the fix is self-evident (HM documents skip rationale)._
         - [ ] 6d. Effort estimated
         - [ ] 6e. Board issues created/updated/deleted
         - [ ] 6f. In-flight change registry checked
         - [ ] 6g. HM approved **(HM)**
 
-        ### 7. Validate plan
+        ### 7. Review plan
+        _May be skipped for bugs when the fix is self-evident (HM documents skip rationale)._
         - [ ] 7a. Plan completeness verified
         - [ ] 7b. Collision check performed against in-flight registry
         - [ ] 7c. HM approved **(HM)**
 
-        ### 8. Implement changes
+        ### 8. Author impl
         - [ ] 8a. Code completed (all plan-manifest functions implemented)
         - [ ] 8b. Test coverage verified (100% statement coverage on modules in coverage scope)
         - [ ] 8c. Documentation updated (README.md, architecture.md, operations.md as applicable)
         - [ ] 8d. Local enforcement checks passed
         - [ ] 8e. PR created
 
-        ### 9. Validate implementation
+        ### 9. Review impl
         - [ ] 9a. CI passed
         - [ ] 9b. Gemini review handled (each comment addressed or dismissed with rationale, marked resolved)
         - [ ] 9c. PR merged
