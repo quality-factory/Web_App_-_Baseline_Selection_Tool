@@ -417,7 +417,7 @@ jobs:
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.local/share/powershell/Modules
-          key: ps-modules-${{ runner.os }}-pssa1.24.0
+          key: ps-modules-${{ runner.os }}-pssa1.25.0
 
       # ── PowerShell: Install PSScriptAnalyzer (integrity-verified) ──────
       # §CI-Time Enforcement #10: SAST via PSScriptAnalyzer.
@@ -429,8 +429,8 @@ jobs:
         if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
         env:
-          PSSA_VERSION: '1.24.0'
-          PSSA_SHA256: 'B65F47EF115A4F68B562CA2ED749D3AAB48D16A478F30E30A43DF5D22BA54AC3'
+          PSSA_VERSION: '1.25.0'
+          PSSA_SHA256: '2B219F688BCDD67101040F845E530B22907D39BBF49089B4B5B2AFABA7996791'
         run: |
           $modName = 'PSScriptAnalyzer'
           $modVer  = $env:PSSA_VERSION
@@ -543,7 +543,7 @@ jobs:
         if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install Python dependencies
@@ -776,15 +776,15 @@ jobs:
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/Documents/PowerShell/Modules
-          key: ps-modules-${{ runner.os }}-pssa1.24.0-pester5.7.1
+          key: ps-modules-${{ runner.os }}-pssa1.25.0-pester5.7.1
 
       # ── PowerShell: Install PSScriptAnalyzer (needed for custom rule tests) ─
       - name: Install PSScriptAnalyzer (Windows)
         if: needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
         env:
-          PSSA_VERSION: '1.24.0'
-          PSSA_SHA256: 'B65F47EF115A4F68B562CA2ED749D3AAB48D16A478F30E30A43DF5D22BA54AC3'
+          PSSA_VERSION: '1.25.0'
+          PSSA_SHA256: '2B219F688BCDD67101040F845E530B22907D39BBF49089B4B5B2AFABA7996791'
         run: |
           $modName = 'PSScriptAnalyzer'
           $modVer  = $env:PSSA_VERSION
@@ -991,7 +991,7 @@ jobs:
         if: needs.detect.outputs.has-python == 'true' && needs.detect.outputs.has-powershell != 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install Python dependencies (test)
