@@ -80,7 +80,7 @@ def test_compute_prompt_version() -> None:
 
 
 def test_qualify_models() -> None:
-    adapters = [
+    adapters: list[BaseAdapter] = [
         MockAdapter("good1", qualify_result=True),
         MockAdapter("bad", qualify_result=False),
         MockAdapter("good2", qualify_result=True),
@@ -117,7 +117,7 @@ def test_run_pipeline_success(tmp_path: Path) -> None:
     prompt_path.write_text("Extract {{BASELINE_ID}} {{DISPLAY_NAME}} {{SOURCE_URLS}} {{SCHEMA}}")
 
     output = {"attr_a": "value1"}
-    adapters = [
+    adapters: list[BaseAdapter] = [
         MockAdapter("m1", output=output),
         MockAdapter("m2", output=output),
         MockAdapter("m3", output=output),
@@ -141,7 +141,7 @@ def test_run_pipeline_insufficient_models(tmp_path: Path) -> None:
     prompt_path = tmp_path / "prompt.txt"
     prompt_path.write_text("{{BASELINE_ID}} {{DISPLAY_NAME}} {{SOURCE_URLS}} {{SCHEMA}}")
 
-    adapters = [MockAdapter("m1", qualify_result=False)]
+    adapters: list[BaseAdapter] = [MockAdapter("m1", qualify_result=False)]
 
     with pytest.raises(RuntimeError, match="qualified"):
         run_pipeline(

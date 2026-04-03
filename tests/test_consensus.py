@@ -5,6 +5,8 @@ Covers all degradation rule branches per architecture §18.2.
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.llm_consensus.consensus import apply_degradation_rules, compute_consensus
 
 
@@ -98,7 +100,7 @@ def test_boolean_consensus() -> None:
 
 def test_none_values_handling() -> None:
     """None is a valid value — two Nones vs one string = 2-of-3 majority on None."""
-    outputs = [
+    outputs: list[dict[str, Any]] = [
         {"attr_a": None},
         {"attr_a": None},
         {"attr_a": "value"},
