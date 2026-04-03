@@ -3,6 +3,7 @@ name: PR Title
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! echo "$TITLE" | grep -qE '^(feat|fix|refactor|test|ci|docs|chore)(\([^)]+\))?!?:'; then
+          if ! echo "$TITLE" | grep -qE '^(feat|fix|refactor|test|ci|docs|chore)(\([^)]+\))?!?: .'; then
             echo "::error::PR title must follow conventional commit format: type(scope): description"
             echo "Valid types: feat, fix, refactor, test, ci, docs, chore"
             echo "Got: $TITLE"
