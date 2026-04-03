@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document ID** | TD-BST-001 |
-| **Version** | 1.0.1 |
+| **Version** | 1.0.2 |
 | **Status** | Draft |
 | **Author** | Author TD (agent) |
 | **Validator** | TBD (assigned at Review TD) |
@@ -64,6 +64,7 @@ Lifecycle rules per fd-td-design-principles.md v3.4 §Stable identifiers: delete
 | 2026-04-03 | — | Pre-template architecture.md and operations.md produced (design decisions, component design, data schemas, failure modes, deployment pipeline) | Author TD (agent) |
 | 2026-04-03 | 1.0.0 | Restructured to fd-td-design-principles.md v3.4 template. Added: metadata, stable identifiers, version history, glossary, scope, assumptions and constraints (with deployment context declaration), risk cross-reference, cross-reference, change management, non-functional requirements (derived from FD QR-01–QR-07), integration design, transition design, testing strategy, design decisions log. All existing technical content preserved. | Author TD (agent) |
 | 2026-04-03 | 1.0.1 | Aligned FD cross-reference to v1.1.0 (FD added EQ answer options, base weight vector, EQ-driven weight modifiers, compatibility scoring rules, high-weight definition, FR-P12 rate limit parameter). Added rate limit threshold (60 req/min/IP per FR-P12) to §13.4. | Author TD (agent) |
+| 2026-04-03 | 1.0.2 | Created project traceability matrix (TM-BST-001). Updated §7 cross-reference from TBD to TM-BST-001 v1.0.0. Corrected §8.2 sign-off authority wording to match FD §11 stakeholder map. | Author TD (agent) |
 
 ---
 
@@ -168,7 +169,7 @@ This section identifies technical risks relevant to the TD scope. Business risks
 | Operations Guide — BST | — (`docs/operations.md`) | 1.0.0 | Companion to this TD. Covers infrastructure, deployment pipeline, verification, and operational procedures (§17 of this document references it). |
 | Data Dictionary — BST | — (`docs/functional-design_-_data-dictionary-v1.md`) | 1.0 | Defines all 45 attributes. Authoritative source for schema generation and data model (§11). |
 | Factory Specification | — (`Infra_-_Subscription_Factory/SubscriptionFactory.md`) | v14.0.0 | Governing factory policies. Technical constraints (§5.3) trace to this document. |
-| Project traceability matrix | — | TBD | Links business objectives → FD requirements → TD design elements → test cases. |
+| Project traceability matrix | TM-BST-001 (`docs/traceability-matrix.md`) | 1.0.0 | Links business objectives → FD requirements → TD design elements → test cases. |
 
 Cross-references will be updated with formal version numbers when both FD and TD are formalised, per fd-td-design-principles.md §Cross-reference.
 
@@ -182,7 +183,7 @@ This document is baselined when its status transitions to **Formalised** followi
 
 ### 8.2 Sign-off authority
 
-The Human Maintainer (Factory Owner) holds sign-off authority for this TD, covering technical architecture, security and privacy, and quality assurance per the project approval matrix (FD-BST-001 §11).
+The Human Maintainer (Factory Owner) holds sign-off authority for this TD, covering business outcomes, security and privacy, and quality assurance per the stakeholder map (FD-BST-001 §11). In the v1 single-operator model, the Factory Owner also covers technical architecture by default.
 
 ### 8.3 Change-vs-clarification heuristic
 
@@ -632,6 +633,7 @@ Web_App_-_Baseline_Selection_Tool/
 │   ├── functional-design_-_data-dictionary-v1.md
 │   ├── architecture.md         — this file
 │   ├── operations.md
+│   ├── traceability-matrix.md
 │   └── archive/
 │       └── functional-design-v1.md
 ├── governance/
@@ -812,7 +814,7 @@ Implements FD §14.5 (environment profile questions, hard filters, weighted scor
 
 **Hard filters** — EQ-01 (OS mismatch) and EQ-04 (paid when free required) exclude baselines before scoring. Excluded baselines are retained in a separate array for the exclusion list (UC-04b AC3).
 
-**Scoring** — Weighted sum of attribute-level compatibility scores. Each attribute's compatibility is computed from its value against the environment profile. Missing values contribute zero to the score but increment the missing-count for the confidence adjustment.
+**Scoring** — Weighted average of attribute-level compatibility scores, normalised by the sum of effective weights of non-missing attributes: Score = Σ(effective_weight × compatibility_score) / Σ(effective_weight) where sums range over scored attributes with non-missing values (FD §14.5.7). Each attribute's compatibility is computed from its value against the environment profile. Missing values are excluded from both numerator and denominator — they neither help nor penalise. The confidence adjustment separately tracks missing high-weight attributes.
 
 **Confidence adjustment** — Missing or low-confidence values on high-weight attributes reduce the recommendation's stated confidence. More than three missing high-weight attributes triggers a low-confidence flag (UC-04b AC2).
 
