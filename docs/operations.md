@@ -1,8 +1,27 @@
-<!-- Audience: DevOps, maintainers -->
-<!-- Scope: CI/CD, git hooks, version tagging, releases -->
-<!-- Factory alignment: SubscriptionFactory.md v13.5.0 -->
+# Operations Guide — Baseline Selection Tool (BST)
 
-# Operations Guide
+| Field | Value |
+|---|---|
+| **Document ID** | OPS-BST-001 |
+| **Version** | 1.0.0 |
+| **Status** | Draft |
+| **Author** | Author TD (agent) |
+| **Creation date** | 2026-04-03 |
+| **Factory alignment** | SubscriptionFactory.md v14.0.0 |
+| **Companion** | [`architecture.md`](architecture.md) (TD-BST-001) |
+
+**Scope:** This document covers infrastructure, deployment pipeline, verification procedures, and operational notes for the BST. It is the companion to TD-BST-001 and realises §17 (Infrastructure and Deployment) of the architecture document. Shared specifications (stable identifiers, glossary, assumptions, risk cross-reference, cross-reference, change management) are defined in TD-BST-001 and not duplicated here.
+
+---
+
+## Version History
+
+| Date | Version | Change | Author |
+|---|---|---|---|
+| 2026-04-03 | — | Pre-template operations.md produced (deployment pipeline, verification, curation procedures) | Author TD (agent) |
+| 2026-04-03 | 1.0.0 | Restructured with metadata, version history, and scope reference to TD-BST-001. Added deployment verification items for KB version/date and export completeness. All existing operational content preserved. | Author TD (agent) |
+
+---
 
 ## Git hooks
 
@@ -56,10 +75,12 @@ After every deployment, verify:
 - [ ] Footer links point to correct GT&C and privacy statement URLs
 - [ ] Response headers for BST page: exactly one `X-Frame-Options: DENY` (not SAMEORIGIN, not both)
 - [ ] CSP header present and correct
+- [ ] KB version and generation date visible on baseline browser and all data-presenting views
+- [ ] Exports (PDF and markdown) complete with disclaimer, attribution, and KB version/date
 
 ## GT&C acceptance logging
 
-The acceptance event is logged in `index.php` when the user submits the GT&C agreement (from the website-layer popup). The log entry (see acceptance log schema in [`architecture.md`](architecture.md) §Acceptance log schema) is written server-side before the user is permitted to load the SPA. Log file is write-once/append-only where the hosting environment supports it.
+The acceptance event is logged in `index.php` when the user submits the GT&C agreement (from the website-layer popup). The log entry (see acceptance log schema in [`architecture.md`](architecture.md) §11.3) is written server-side before the user is permitted to load the SPA. Log file is write-once/append-only where the hosting environment supports it.
 
 ### Acceptance log management
 
@@ -103,7 +124,7 @@ LLM API costs (remote providers only; local models have no per-call cost) are tr
 
 ## Operational decisions
 
-Operational decisions are tracked here. Architecture-scoped decisions are tracked in [`architecture.md`](architecture.md) §Open Technical Decisions.
+Operational decisions are tracked here. Architecture-scoped decisions are tracked in [`architecture.md`](architecture.md) §19 (Open technical decisions).
 
 | # | Decision | Notes |
 |---|---|---|
