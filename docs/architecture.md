@@ -170,6 +170,7 @@ This section identifies technical risks relevant to the TD scope. Business risks
 | Data Dictionary — BST | — (`docs/functional-design_-_data-dictionary-v1.md`) | 1.0 | Defines all 45 attributes. Authoritative source for schema generation and data model (§11). |
 | Factory Specification | — (`Infra_-_Subscription_Factory/SubscriptionFactory.md`) | v14.0.0 | Governing factory policies. Technical constraints (§5.3) trace to this document. |
 | Project traceability matrix | TM-BST-001 (`docs/traceability-matrix.md`) | 1.0.0 | Links business objectives → FD requirements → TD design elements → test cases. |
+| Function manifest | — (`docs/function-manifest.md`) | 1.0.0 | Lists all units of change per implementation issue. Used for cross-CR collision detection (SubscriptionFactory.md §Author Phase 1, field vi). |
 
 Cross-references will be updated with formal version numbers when both FD and TD are formalised, per fd-td-design-principles.md §Cross-reference.
 
