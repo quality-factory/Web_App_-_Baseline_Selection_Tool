@@ -1,7 +1,7 @@
 <!-- Audience: developers, automation agents -->
 <!-- Scope: system overview, module layout, design decisions, capability model -->
 <!-- Factory alignment: SubscriptionFactory.md v13.5.0 -->
-<!-- Input document: docs/functional-design-v1.md -->
+<!-- Input document: docs/functional-design.md -->
 
 # Architecture
 
@@ -304,7 +304,9 @@ Web_App_-_Baseline_Selection_Tool/
 │   └── .htaccess               — SPA routing; blocks /data/ direct access
 ├── tests/                      — pytest
 ├── docs/
-│   ├── functional-design-v1.md — what the system does (technology-agnostic)
+│   ├── functional-design.md    — what the system does (technology-agnostic)
+│   ├── archive/
+│   │   └── functional-design-v1.md — superseded pre-template version (audit trail)
 │   ├── functional-design_-_data-dictionary-v1.md — attribute catalogue
 │   ├── architecture.md         — this file
 │   └── operations.md

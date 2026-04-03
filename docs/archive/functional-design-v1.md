@@ -1,6 +1,6 @@
 # Functional Design — Baseline Selection Tool (BST) v1.0
 
-**Status:** Final — pending Human Maintainer approval
+**Status:** Superseded — replaced by [`functional-design.md`](../functional-design.md) (FD-BST-001)
 **Scope:** Phase a — baseline selection and comparison
 **Factory alignment:** SubscriptionFactory.md v13.5.0
 **Date:** 2026-04-01

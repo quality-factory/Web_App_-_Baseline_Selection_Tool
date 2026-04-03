@@ -1,7 +1,7 @@
 # Data Dictionary — Baseline Selection Tool (BST) v1.0
 
 **Status:** Final — pending Human Maintainer approval
-**Parent document:** [`functional-design-v1.md`](functional-design-v1.md) §5.5
+**Parent document:** [`functional-design.md`](functional-design.md) §14.1.5
 **Date:** 2026-04-01
 
 ---
@@ -21,7 +21,7 @@ Each attribute is defined by:
 | `attribute_id` | Stable slug identifier. Once assigned, never changes. |
 | Label | Human-readable name displayed in the UI. |
 | Data type | `Boolean`, `Enum`, `Enum (multi)`, `Date`, `Integer`, `Free text`, `Free text (list)` |
-| Obj/Subj | `Objective` (measurable without judgment) or `Subjective` (requires analyst assessment). Subjective attributes are collected via the Tier 3 process (see functional design §5.3). |
+| Obj/Subj | `Objective` (measurable without judgment) or `Subjective` (requires analyst assessment). Subjective attributes are collected via the Tier 3 process (see functional design §14.1.3). |
 | Stability | How often the value changes for a given baseline: `Static` (never changes), `Per release` (changes with new baseline version), `Continuous` (can change at any time). |
 | Obtainability | How hard the value is to collect: `Easy` (publicly visible metadata), `Moderate` (requires reading documentation), `Difficult` (requires research or analyst judgment). |
 | Enum values / Rubric | For Enum and Subjective attributes: the complete set of permitted values with definitions. For Tier 3 attributes: the scoring rubric. |
@@ -151,15 +151,15 @@ Actual URLs are not embedded in this document — they are maintained in the pip
 
 ## 5. Attribute count summary
 
-The catalogue defines 45 attributes across 8 categories. Category counts match [`functional-design-v1.md`](functional-design-v1.md) §5.2.
+The catalogue defines 45 attributes across 8 categories. Category counts match [`functional-design.md`](functional-design.md) §14.1.2.
 
 ## 6. Collection tier assignment
 
 Each attribute's initial collection tier is determined by its Obj/Subj and Obtainability classifications:
 
-- **Objective + Easy/Moderate** attributes are candidates for Tier 2b (LLM-consensus-extracted) collection. See functional design §5.3 for tier definitions.
+- **Objective + Easy/Moderate** attributes are candidates for Tier 2b (LLM-consensus-extracted) collection. See functional design §14.1.3 for tier definitions.
 - Objective + Easy attributes collected via Tier 2b may be promoted to Tier 2 (Document-verifiable) after human verification (Horizon 1, Layer 1 per FR-C12).
-- **Subjective** attributes collected via Tier 2b remain at confidence ceiling Medium regardless of consensus strength, consistent with the Tier 3 policy in functional design §5.3.
+- **Subjective** attributes collected via Tier 2b remain at confidence ceiling Medium regardless of consensus strength, consistent with the Tier 3 policy in functional design §14.1.3.
 - Attributes requiring paywalled content are recorded as missing with reason `paywalled` regardless of collection method.
 
 ## 7. Consistency obligations
@@ -168,6 +168,6 @@ When this catalogue changes:
 
 1. The `attribute_schema` array in [`architecture.md`](architecture.md) §Knowledge base schema MUST be updated to match.
 2. The `data/baselines.schema.json` validation schema MUST be updated to match.
-3. The category counts in [`functional-design-v1.md`](functional-design-v1.md) §5.2 MUST be updated to match.
+3. The category counts in [`functional-design.md`](functional-design.md) §14.1.2 MUST be updated to match.
 4. The attribute count references throughout the functional design MUST be updated to reflect the actual count.
-5. The environment profile weight vector in [`functional-design-v1.md`](functional-design-v1.md) §8.2 MUST cover all attributes.
+5. The environment profile weight vector in [`functional-design.md`](functional-design.md) §14.5 MUST cover all attributes.

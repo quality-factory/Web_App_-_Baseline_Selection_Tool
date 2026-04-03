@@ -27,7 +27,7 @@ This is a PHP + JavaScript web application with a Python curation pipeline.
 
 ### Key design documents
 
-- `docs/functional-design-v1.md` — What the system does (technology-agnostic)
+- `docs/functional-design.md` — What the system does (technology-agnostic, supersedes `docs/archive/functional-design-v1.md`)
 - `docs/architecture.md` — Design decisions, component design, data schemas
 - `docs/operations.md` — Deployment pipeline, verification checklist, operational notes
 - Hosting infrastructure: [Infra_-_Subscription_Factory#18](https://github.com/quality-factory/Infra_-_Subscription_Factory/issues/18)

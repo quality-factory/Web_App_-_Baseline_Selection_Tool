@@ -12,7 +12,7 @@
 | **Sign-off authority** | Human Maintainer (Factory Owner) |
 | **Factory alignment** | SubscriptionFactory.md v14.0.0 |
 | **Principles alignment** | fd-td-design-principles.md v3.4 |
-| **Supersedes** | [`functional-design-v1.md`](functional-design-v1.md) (pre-template version, retained for audit trail) |
+| **Supersedes** | [`functional-design-v1.md`](archive/functional-design-v1.md) (pre-template version, retained for audit trail) |
 
 ---
 
