@@ -659,7 +659,7 @@ jobs:
                 response=$(curl -s -X POST 'https://api.osv.dev/v1/query' \
                   -H 'Content-Type: application/json' \
                   -d "{\"version\":\"${ver}\",\"package\":{\"name\":\"${pkg}\",\"ecosystem\":\"PyPI\"}}" 2>/dev/null || true)
-                vulns=$(echo "$response" | grep -o '"id"' | wc -l)
+                vulns=$(echo "$response" | grep -o '"id"' | wc -l || true)
                 if [ "$vulns" -gt 0 ]; then
                   echo "::warning::${pkg} ${ver} has known advisories"
                   ADVISORY_FOUND=1
@@ -683,7 +683,7 @@ jobs:
               response=$(curl -s -X POST 'https://api.osv.dev/v1/query' \
                 -H 'Content-Type: application/json' \
                 -d "{\"version\":\"${version}\",\"package\":{\"name\":\"${name}\",\"ecosystem\":\"${ecosystem}\"}}" 2>/dev/null || true)
-              vulns=$(echo "$response" | grep -o '"id"' | wc -l)
+              vulns=$(echo "$response" | grep -o '"id"' | wc -l || true)
               if [ "$vulns" -gt 0 ]; then
                 echo "::warning::${name} ${version} has known advisories"
                 ADVISORY_FOUND=1
