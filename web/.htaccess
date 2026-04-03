@@ -1,0 +1,17 @@
+# BST SPA routing and security
+# Compatible with Apache and LiteSpeed (TR-03)
+
+RewriteEngine On
+
+# Block direct access to data directory (TC-09, FR-P09)
+RewriteRule ^data/ - [F,L]
+
+# Route API requests to PHP handler
+RewriteRule ^api/baselines\.php$ api/baselines.php [L]
+
+# Serve existing files directly (JS, CSS, images, robots.txt)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Route all other requests to the SPA entry point
+RewriteRule ^ index.php [L]

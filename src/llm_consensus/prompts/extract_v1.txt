@@ -1,0 +1,30 @@
+You are a security baseline analyst. Your task is to extract structured attribute values for a specific security hardening baseline from its primary source documentation.
+
+## Baseline
+
+- **ID:** {{BASELINE_ID}}
+- **Name:** {{DISPLAY_NAME}}
+
+## Primary source URLs
+
+{{SOURCE_URLS}}
+
+## Instructions
+
+1. For each attribute in the schema below, extract the value from the primary source documentation listed above.
+2. If you cannot find the value in the listed sources, set the value to null.
+3. For Enum attributes, use ONLY the exact enum values defined in the schema.
+4. For Enum (multi) attributes, return an array of applicable enum values.
+5. For Boolean attributes, return true or false.
+6. For Date attributes, return an ISO 8601 date string (YYYY-MM-DD).
+7. For Integer attributes, return a number.
+8. For Free text attributes, return a string.
+9. For Free text (list) attributes, return an array of strings.
+10. Do NOT cite URLs that are not in the primary source list above. If you use information from a URL not listed, that value will be rejected.
+11. Be conservative: if uncertain, set the value to null rather than guessing.
+
+## Output schema
+
+Respond with a JSON object conforming to the following schema:
+
+{{SCHEMA}}
