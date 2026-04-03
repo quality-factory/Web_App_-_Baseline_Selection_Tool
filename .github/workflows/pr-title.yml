@@ -4,8 +4,11 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+permissions:
+  contents: read
+
 jobs:
-  check:
+  check-title:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -15,6 +18,7 @@ jobs:
           egress-policy: audit
 
       - name: Validate PR title
+        shell: bash
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
@@ -23,5 +27,6 @@ jobs:
           if ! echo "$TITLE" | grep -qE '^(feat|fix|refactor|test|ci|docs|chore)(\([^)]+\))?!?:'; then
             echo "::error::PR title must follow conventional commit format: type(scope): description"
             echo "Valid types: feat, fix, refactor, test, ci, docs, chore"
+            echo "Got: $TITLE"
             exit 1
           fi
