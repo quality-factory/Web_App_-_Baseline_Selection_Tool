@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Baseline Selection Tool</title>
+    <link rel="stylesheet" href="assets/app.css">
+    <script defer src="assets/alpine.min.js"></script>
+    <script defer src="assets/app.js"></script>
+</head>
+<body x-data="initApp()" x-cloak>
+
+    <!-- ── Navigation ──────────────────────────────────────────────── -->
+    <nav class="nav">
+        <div class="nav-brand">Baseline Selection Tool</div>
+        <div class="nav-links">
+            <button :class="{ active: view === 'browser' }" @click="view = 'browser'">Browser</button>
+            <button :class="{ active: view === 'compare' }" @click="view = 'compare'">Compare</button>
+            <button :class="{ active: view === 'wizard' }" @click="view = 'wizard'">Wizard</button>
+            <button :class="{ active: view === 'dictionary' }" @click="view = 'dictionary'">Dictionary</button>
+            <button :class="{ active: view === 'about' }" @click="view = 'about'">About</button>
+        </div>
+    </nav>
+
+    <!-- ── Error state ─────────────────────────────────────────────── -->
+    <template x-if="loadError">
+        <div class="error-banner">
+            <p>Failed to load knowledge base: <span x-text="loadError"></span></p>
+        </div>
+    </template>
+
+    <!-- ── KB version bar (FR-P14) ─────────────────────────────────── -->
+    <template x-if="kb && !loadError">
+        <div class="kb-info">
+            KB version: <span x-text="kb.meta.generated_by"></span>
+            | Generated: <span x-text="kb.meta.generated_at"></span>
+            | Baselines: <span x-text="kb.meta.baseline_count"></span>
+        </div>
+    </template>
+
+    <!-- ── Main content ────────────────────────────────────────────── -->
+    <main class="main" x-show="kb && !loadError">
+
+        <!-- UC-01a: Baseline browser -->
+        <section x-show="view === 'browser'">
+            <h2>Baseline Browser</h2>
+
+            <!-- Filters (UC-01b) -->
+            <div class="filters">
+                <label>
+                    OS filter:
+                    <select x-model="filterOS" @change="applyFilters()">
+                        <option value="">All platforms</option>
+                        <template x-for="os in availableOS" :key="os">
+                            <option :value="os" x-text="os"></option>
+                        </template>
+                    </select>
+                </label>
+                <label>
+                    Category:
+                    <select x-model="filterCategory" @change="applyFilters()">
+                        <option value="">All categories</option>
+                        <template x-for="cat in availableCategories" :key="cat">
+                            <option :value="cat" x-text="cat"></option>
+                        </template>
+                    </select>
+                </label>
+                <button @click="filterOS = ''; filterCategory = ''; applyFilters()">Clear filters</button>
+                <span class="filter-count" x-text="filteredBaselines.length + ' baselines'"></span>
+            </div>
+
+            <!-- Baseline list -->
+            <template x-if="filteredBaselines.length === 0">
+                <div class="empty-state">
+                    <p>No baselines match the current filter.</p>
+                    <button @click="filterOS = ''; filterCategory = ''; applyFilters()">Clear filters</button>
+                </div>
+            </template>
+            <div class="baseline-grid">
+                <template x-for="b in filteredBaselines" :key="b.baseline_id">
+                    <div class="baseline-card" @click="selectBaseline(b)">
+                        <h3 x-text="b.display_name"></h3>
+                        <p class="card-meta">
+                            <span x-text="b.issuer"></span> &middot;
+                            <span x-text="b.baseline_type"></span>
+                        </p>
+                        <div class="card-actions">
+                            <button @click.stop="toggleCompare(b.baseline_id)" class="btn-small"
+                                    :class="{ selected: compareSelection.includes(b.baseline_id) }">
+                                <span x-text="compareSelection.includes(b.baseline_id) ? '✓ Compare' : '+ Compare'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- UC-02: Baseline detail -->
+            <template x-if="selectedBaseline">
+                <div class="detail-panel">
+                    <div class="detail-header">
+                        <h2 x-text="selectedBaseline.display_name"></h2>
+                        <button @click="selectedBaseline = null" class="btn-close">&times;</button>
+                    </div>
+                    <p class="disclaimer-notice">Attribute values are sourced from third parties and may not reflect the current state of the referenced baseline.</p>
+                    <template x-for="cat in attributeCategories" :key="cat">
+                        <div class="attr-category">
+                            <h3 @click="toggleCategory(cat)" class="collapsible"
+                                :class="{ collapsed: collapsedCategories.includes(cat) }">
+                                <span x-text="cat"></span>
+                            </h3>
+                            <div x-show="!collapsedCategories.includes(cat)">
+                                <template x-for="attr in attributesInCategory(cat)" :key="attr.attribute_id">
+                                    <div class="attr-row">
+                                        <span class="attr-label" x-text="attr.label"></span>
+                                        <span class="attr-value"
+                                              :class="{
+                                                  missing: getAttrData(selectedBaseline, attr.attribute_id)?.missing,
+                                                  'low-conf': getAttrData(selectedBaseline, attr.attribute_id)?.confidence === 'Low'
+                                              }">
+                                            <template x-if="getAttrData(selectedBaseline, attr.attribute_id)?.missing">
+                                                <span class="missing-badge" :title="getAttrData(selectedBaseline, attr.attribute_id)?.missing_reason">
+                                                    Missing: <span x-text="getAttrData(selectedBaseline, attr.attribute_id)?.missing_reason"></span>
+                                                </span>
+                                            </template>
+                                            <template x-if="!getAttrData(selectedBaseline, attr.attribute_id)?.missing">
+                                                <span x-text="formatValue(getAttrData(selectedBaseline, attr.attribute_id)?.value)"></span>
+                                            </template>
+                                        </span>
+                                        <span class="attr-confidence"
+                                              :class="'conf-' + (getAttrData(selectedBaseline, attr.attribute_id)?.confidence || '').toLowerCase()"
+                                              x-text="getAttrData(selectedBaseline, attr.attribute_id)?.confidence"></span>
+                                        <span class="attr-tier" x-text="'T' + (getAttrData(selectedBaseline, attr.attribute_id)?.trust_tier || '')"></span>
+                                        <!-- Flag value (UC-02 AC6) -->
+                                        <a class="flag-link" :href="flagValueUrl(selectedBaseline.baseline_id, attr.attribute_id, getAttrData(selectedBaseline, attr.attribute_id)?.value)" target="_blank" rel="noopener">Flag</a>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </section>
+
+        <!-- UC-03: Compare baselines -->
+        <section x-show="view === 'compare'">
+            <h2>Compare Baselines</h2>
+
+            <template x-if="compareSelection.length < 2">
+                <div class="empty-state">
+                    <p>Select 2–4 baselines from the browser to compare.</p>
+                    <button @click="view = 'browser'">Go to Browser</button>
+                </div>
+            </template>
+
+            <template x-if="compareSelection.length >= 2">
+                <div>
+                    <div class="compare-controls">
+                        <label>
+                            <input type="checkbox" x-model="diffOnly">
+                            Show differences only
+                        </label>
+                        <button @click="exportPdf()">Export PDF</button>
+                        <button @click="exportMarkdown()">Export Markdown</button>
+                    </div>
+
+                    <template x-for="cat in attributeCategories" :key="cat">
+                        <div class="compare-category">
+                            <h3 @click="toggleCategory(cat)" class="collapsible"
+                                :class="{ collapsed: collapsedCategories.includes(cat) }">
+                                <span x-text="cat"></span>
+                            </h3>
+                            <table x-show="!collapsedCategories.includes(cat)" class="compare-table">
+                                <thead>
+                                    <tr>
+                                        <th>Attribute</th>
+                                        <template x-for="bid in compareSelection" :key="bid">
+                                            <th x-text="getBaselineName(bid)"></th>
+                                        </template>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="attr in compareAttributes(cat)" :key="attr.attribute_id">
+                                        <tr>
+                                            <td x-text="attr.label"></td>
+                                            <template x-for="bid in compareSelection" :key="bid">
+                                                <td :class="{
+                                                    missing: getBaselineAttr(bid, attr.attribute_id)?.missing,
+                                                    'low-conf': getBaselineAttr(bid, attr.attribute_id)?.confidence === 'Low'
+                                                }">
+                                                    <template x-if="getBaselineAttr(bid, attr.attribute_id)?.missing">
+                                                        <span class="missing-badge">Missing</span>
+                                                    </template>
+                                                    <template x-if="!getBaselineAttr(bid, attr.attribute_id)?.missing">
+                                                        <span x-text="formatValue(getBaselineAttr(bid, attr.attribute_id)?.value)"></span>
+                                                    </template>
+                                                </td>
+                                            </template>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </section>
+
+        <!-- UC-04a: Wizard questions -->
+        <section x-show="view === 'wizard' && !wizardComplete">
+            <h2>Baseline Selection Wizard</h2>
+            <div class="wizard-progress">
+                Question <span x-text="wizardStep + 1"></span> of <span x-text="wizardQuestions.length"></span>
+                <div class="progress-bar">
+                    <div class="progress-fill" :style="'width: ' + ((wizardStep + 1) / wizardQuestions.length * 100) + '%'"></div>
+                </div>
+            </div>
+
+            <template x-if="wizardQuestions[wizardStep]">
+                <div class="wizard-question">
+                    <h3 x-text="wizardQuestions[wizardStep].question"></h3>
+                    <p class="wizard-context" x-text="wizardQuestions[wizardStep].context"></p>
+
+                    <div class="wizard-options">
+                        <template x-for="opt in wizardQuestions[wizardStep].options" :key="opt.value">
+                            <label class="wizard-option" :class="{ selected: wizardAnswers[wizardQuestions[wizardStep].id] === opt.value }">
+                                <input type="radio"
+                                       :name="wizardQuestions[wizardStep].id"
+                                       :value="opt.value"
+                                       x-model="wizardAnswers[wizardQuestions[wizardStep].id]">
+                                <span class="option-label" x-text="opt.label"></span>
+                            </label>
+                        </template>
+                    </div>
+
+                    <div class="wizard-nav">
+                        <button @click="wizardStep--" :disabled="wizardStep === 0">Back</button>
+                        <template x-if="wizardStep < wizardQuestions.length - 1">
+                            <button @click="wizardStep++" :disabled="!wizardAnswers[wizardQuestions[wizardStep].id]">Next</button>
+                        </template>
+                        <template x-if="wizardStep === wizardQuestions.length - 1">
+                            <button @click="runWizard()" :disabled="!wizardAnswers[wizardQuestions[wizardStep].id]">Get Recommendation</button>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </section>
+
+        <!-- UC-04b: Wizard results -->
+        <section x-show="view === 'wizard' && wizardComplete">
+            <h2>Recommended Baselines</h2>
+
+            <!-- Disclaimer (FR-P08) -->
+            <div class="disclaimer" x-show="kb?.disclaimer">
+                <p x-text="kb?.disclaimer?.text"></p>
+                <p class="disclaimer-attr">— <span x-text="kb?.disclaimer?.attribution"></span></p>
+            </div>
+
+            <div class="recommendation-meta">
+                <p>KB version: <span x-text="kb?.meta?.generated_by"></span> | Generated: <span x-text="kb?.meta?.generated_at"></span></p>
+                <p class="recommendation-note">Factors NOT considered: aspects outside the seven wizard questions are not reflected in this recommendation.</p>
+            </div>
+
+            <template x-if="wizardLowConfidence">
+                <div class="low-confidence-flag">
+                    Low confidence: more than 3 high-weight attributes are missing for one or more baselines.
+                </div>
+            </template>
+
+            <div class="recommendation-actions">
+                <button @click="wizardComplete = false; wizardStep = 0">Refine answers</button>
+                <button @click="exportPdf()">Export PDF</button>
+                <button @click="exportMarkdown()">Export Markdown</button>
+            </div>
+
+            <!-- Ranked results -->
+            <div class="ranked-list">
+                <template x-for="(rec, idx) in recommendations" :key="rec.baseline_id">
+                    <div class="rec-card" :class="{ excluded: rec.excluded }">
+                        <div class="rec-rank" x-text="rec.excluded ? '—' : '#' + (idx + 1)"></div>
+                        <div class="rec-body">
+                            <h3 x-text="rec.display_name"></h3>
+                            <div class="rec-score" x-show="!rec.excluded">
+                                Score: <span x-text="(rec.score * 100).toFixed(1) + '%'"></span>
+                            </div>
+                            <div class="rec-reason" x-show="rec.excluded">
+                                Excluded: <span x-text="rec.exclusion_reason"></span>
+                            </div>
+                            <p class="rec-explanation" x-text="rec.explanation" x-show="!rec.excluded"></p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </section>
+
+        <!-- UC-05: Attribute dictionary -->
+        <section x-show="view === 'dictionary'">
+            <h2>Attribute Dictionary</h2>
+            <p>All 45 attributes used to characterise security hardening baselines.</p>
+
+            <template x-for="cat in attributeCategories" :key="cat">
+                <div class="dict-category">
+                    <h3 x-text="cat"></h3>
+                    <template x-for="attr in attributesInCategory(cat)" :key="attr.attribute_id">
+                        <div class="dict-entry">
+                            <div class="dict-header">
+                                <span class="dict-label" x-text="attr.label"></span>
+                                <code class="dict-id" x-text="attr.attribute_id"></code>
+                            </div>
+                            <div class="dict-meta">
+                                <span x-text="attr.data_type"></span> &middot;
+                                <span x-text="attr.objective_subjective"></span> &middot;
+                                <span x-text="attr.stability"></span> &middot;
+                                <span x-text="attr.obtainability"></span>
+                            </div>
+                            <template x-if="attr.enum_values">
+                                <ul class="dict-enum">
+                                    <template x-for="ev in attr.enum_values" :key="ev.value">
+                                        <li><code x-text="ev.value"></code> — <span x-text="ev.definition"></span></li>
+                                    </template>
+                                </ul>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </section>
+
+        <!-- About -->
+        <section x-show="view === 'about'">
+            <h2>About</h2>
+            <p>The Baseline Selection Tool (BST) helps security practitioners systematically choose hardening baselines for their workstation environments.</p>
+            <p>This tool is a decision-support aid — not a professional security advisory service.</p>
+            <template x-if="kb?.disclaimer">
+                <div class="disclaimer">
+                    <p x-text="kb.disclaimer.text"></p>
+                    <p class="disclaimer-attr">— <span x-text="kb.disclaimer.attribution"></span></p>
+                </div>
+            </template>
+        </section>
+    </main>
+
+    <!-- ── Footer (FR-P15) ─────────────────────────────────────────── -->
+    <footer class="footer">
+        <a href="" id="footer-gtc">General Terms & Conditions</a>
+        <a href="" id="footer-privacy">Privacy Statement</a>
+    </footer>
+
+</body>
+</html>

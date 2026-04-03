@@ -4,9 +4,26 @@ outputs/
 # Test output artifacts
 test-results-*.xml
 coverage.xml
+htmlcov/
+.coverage
 
 # General logs
 *.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+
+# Curation pipeline staging
+staging/
+
+# Stale attributes report (CI-generated, not deployed)
+data/stale-attributes.json
 
 # Claude Code project config (machine-local)
 .claude/settings.local.json

@@ -1,0 +1,87 @@
+{
+  "disa_stig": {
+    "display_name": "DISA STIG",
+    "urls": [
+      "https://public.cyber.mil/stigs/downloads/",
+      "https://www.stigviewer.com/"
+    ]
+  },
+  "openscap_ssg": {
+    "display_name": "OpenSCAP / SCAP Security Guide",
+    "urls": [
+      "https://github.com/ComplianceAsCode/content",
+      "https://www.open-scap.org/"
+    ]
+  },
+  "nist_ncp": {
+    "display_name": "NIST National Checklist Program",
+    "urls": [
+      "https://ncp.nist.gov/repository",
+      "https://csrc.nist.gov/publications/detail/sp/800-70/rev-4/final"
+    ]
+  },
+  "microsoft_sct": {
+    "display_name": "Microsoft Security Compliance Toolkit",
+    "urls": [
+      "https://www.microsoft.com/en-us/download/details.aspx?id=55319",
+      "https://learn.microsoft.com/en-us/windows/security/operating-system-security/device-management/windows-security-configuration-framework/security-compliance-toolkit-10"
+    ]
+  },
+  "cis_benchmarks": {
+    "display_name": "CIS Benchmarks",
+    "urls": [
+      "https://www.cisecurity.org/benchmark",
+      "https://www.cisecurity.org/controls"
+    ]
+  },
+  "acsc_essential_eight": {
+    "display_name": "ACSC Essential Eight",
+    "urls": [
+      "https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight",
+      "https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/ism"
+    ]
+  },
+  "anssi_linux": {
+    "display_name": "ANSSI Linux Hardening Guide",
+    "urls": [
+      "https://www.ssi.gouv.fr/guide/recommandations-de-securite-relatives-a-un-systeme-gnulinux/"
+    ]
+  },
+  "microsoft_intune": {
+    "display_name": "Microsoft Intune Security Baselines",
+    "urls": [
+      "https://learn.microsoft.com/en-us/mem/intune/protect/security-baselines"
+    ]
+  },
+  "pci_dss": {
+    "display_name": "PCI DSS",
+    "urls": [
+      "https://www.pcisecuritystandards.org/document_library/"
+    ]
+  },
+  "iso_27001": {
+    "display_name": "ISO/IEC 27001",
+    "urls": [
+      "https://www.iso.org/standard/27001"
+    ]
+  },
+  "hipaa_hhs": {
+    "display_name": "HIPAA / HHS Guidance",
+    "urls": [
+      "https://www.hhs.gov/hipaa/for-professionals/security/index.html"
+    ]
+  },
+  "nis2": {
+    "display_name": "NIS2 / Cyber Resilience Act",
+    "urls": [
+      "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022L2555",
+      "https://www.enisa.europa.eu/"
+    ]
+  },
+  "soc2": {
+    "display_name": "SOC 2",
+    "urls": [
+      "https://us.aicpa.org/interestareas/frc/assuranceadvisoryservices/aicpasoc2report"
+    ]
+  }
+}
