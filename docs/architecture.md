@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document ID** | TD-BST-001 |
-| **Version** | 1.0.0 |
+| **Version** | 1.0.1 |
 | **Status** | Draft |
 | **Author** | Author TD (agent) |
 | **Validator** | TBD (assigned at Review TD) |
@@ -63,6 +63,7 @@ Lifecycle rules per fd-td-design-principles.md v3.4 §Stable identifiers: delete
 |---|---|---|---|
 | 2026-04-03 | — | Pre-template architecture.md and operations.md produced (design decisions, component design, data schemas, failure modes, deployment pipeline) | Author TD (agent) |
 | 2026-04-03 | 1.0.0 | Restructured to fd-td-design-principles.md v3.4 template. Added: metadata, stable identifiers, version history, glossary, scope, assumptions and constraints (with deployment context declaration), risk cross-reference, cross-reference, change management, non-functional requirements (derived from FD QR-01–QR-07), integration design, transition design, testing strategy, design decisions log. All existing technical content preserved. | Author TD (agent) |
+| 2026-04-03 | 1.0.1 | Aligned FD cross-reference to v1.1.0 (FD added EQ answer options, base weight vector, EQ-driven weight modifiers, compatibility scoring rules, high-weight definition, FR-P12 rate limit parameter). Added rate limit threshold (60 req/min/IP per FR-P12) to §13.4. | Author TD (agent) |
 
 ---
 
@@ -163,7 +164,7 @@ This section identifies technical risks relevant to the TD scope. Business risks
 
 | Document | ID | Version | Relationship |
 |---|---|---|---|
-| Functional Design — BST | FD-BST-001 (`docs/functional-design.md`) | 1.0.0 | Paired FD for this TD. This TD defines how the system achieves the FD requirements. |
+| Functional Design — BST | FD-BST-001 (`docs/functional-design.md`) | 1.1.0 | Paired FD for this TD. This TD defines how the system achieves the FD requirements. |
 | Operations Guide — BST | — (`docs/operations.md`) | 1.0.0 | Companion to this TD. Covers infrastructure, deployment pipeline, verification, and operational procedures (§17 of this document references it). |
 | Data Dictionary — BST | — (`docs/functional-design_-_data-dictionary-v1.md`) | 1.0 | Defines all 45 attributes. Authoritative source for schema generation and data model (§11). |
 | Factory Specification | — (`Infra_-_Subscription_Factory/SubscriptionFactory.md`) | v14.0.0 | Governing factory policies. Technical constraints (§5.3) trace to this document. |
@@ -693,7 +694,7 @@ Standard library modules (`json`, `hashlib`, `datetime`, `pathlib`, `argparse`) 
 
 #### Rate limiting
 
-Per-IP rate limiting implemented in PHP via APCu (preferred) or file-based counters (fallback if APCu unavailable — see OTD-06). Returns HTTP 429 with `Retry-After` on limit exceeded. Rate limit events logged. Internal counters and configuration not exposed in error responses.
+Per-IP rate limiting implemented in PHP via APCu (preferred) or file-based counters (fallback if APCu unavailable — see OTD-06). Threshold: 60 requests per minute per IP address (FR-P12). Returns HTTP 429 with `Retry-After` on limit exceeded. Rate limit events logged. Internal counters and configuration not exposed in error responses.
 
 #### robots.txt
 
@@ -1123,5 +1124,5 @@ Operational decisions (OTD-06, OTD-07) are tracked in [`operations.md`](operatio
 
 *End of Technical Design — Baseline Selection Tool*
 
-*Paired document: [`functional-design.md`](functional-design.md) (FD-BST-001 v1.0.0)*
+*Paired document: [`functional-design.md`](functional-design.md) (FD-BST-001 v1.1.0)*
 *Companion: [`operations.md`](operations.md)*
