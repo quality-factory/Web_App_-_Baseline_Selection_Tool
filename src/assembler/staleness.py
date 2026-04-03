@@ -7,7 +7,7 @@ from the knowledge base's TTL metadata.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -46,11 +46,6 @@ def compute_staleness(
                 review_date = date.fromisoformat(review_date_str)
             except ValueError:
                 continue
-
-            expiry = review_date.replace(
-                year=review_date.year,
-            )
-            from datetime import timedelta
 
             expiry = review_date + timedelta(days=ttl_days)
             days_overdue = (ref - expiry).days

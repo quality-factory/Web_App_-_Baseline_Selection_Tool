@@ -105,7 +105,7 @@ def _normalise_value(value: Any) -> Any:
     if isinstance(value, list):
         return tuple(sorted(str(v).strip().lower() for v in value))
     if isinstance(value, str):
-        return value.strip()
+        return value.strip().lower()
     return value
 
 
