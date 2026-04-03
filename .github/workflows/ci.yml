@@ -17,6 +17,7 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
   schedule:
     # Weekly SCA scan — Monday 06:00 UTC (§CI-Time Enforcement #8).
     - cron: '0 6 * * 1'
