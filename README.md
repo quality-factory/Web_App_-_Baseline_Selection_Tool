@@ -104,3 +104,4 @@ No operations beyond this scope are performed.
 The de-identification shared module is defined in the Subscription Factory repository (`Infra_-_Subscription_Factory`). This project uses the factory's canonical implementation per AGENTS.md §De-identification and metadata minimization.
 
 Built from this template: [Infra_-_Repo_Template](https://github.com/quality-factory/Infra_-_Repo_Template)
+
