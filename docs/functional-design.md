@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document ID** | FD-BST-001 |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Status** | Draft |
 | **Author** | Author FD (agent) |
 | **Validator** | TBD (assigned at Review FD) |
@@ -67,6 +67,7 @@ Lifecycle rules per fd-td-design-principles.md v3.4 §Stable identifiers: delete
 |---|---|---|---|
 | 2026-04-01 | — | Pre-template functional design (`functional-design-v1.md`) produced | Author FD (agent) |
 | 2026-04-03 | 1.0.0 | Restructured to fd-td-design-principles.md v3.4 template. Added: metadata, stable identifiers, version history, glossary, assumptions, risk cross-reference, cross-reference, change management, business process flows, reporting and analytics, quality requirements (separated from NFRs), acceptance criteria and UAT scope, expanded stakeholder map. All existing requirements preserved. | Author FD (agent) |
+| 2026-04-03 | 1.1.0 | Resolved parameterised behavioural threshold gaps. Added: EQ answer options (§14.5.4), base weight vector (§14.5.5), EQ-driven weight modifiers (§14.5.6), compatibility scoring rules (§14.5.7), high-weight definition (§14.5.8). Specified FR-P12 rate limit parameter (60 req/min/IP). Added OFD-06 (weight vector specification rationale). Reclassified country_of_origin and language_availability as informational (weight 0) for v1. | Author FD (agent) |
 
 ---
 
@@ -1130,7 +1131,7 @@ The data dictionary is the authoritative source for attribute definitions. Categ
 
 **FR-P11** All exports (UC-06a, UC-06b) carry: Factory Owner attribution, knowledge base version and generation date, and the full liability disclaimer as defined in §10.1.2.
 
-**FR-P12** Server-side rate limiting on all content requests. Permits normal human browsing; constrains automated bulk extraction.
+**FR-P12** Server-side rate limiting on all content requests at 60 requests per minute per IP address. Permits sustained human browsing at normal interaction speed (approximately one page transition per second) while constraining automated extraction tools. Rationale: typical BST usage involves page transitions every few seconds; 60/minute provides comfortable headroom for rapid comparison workflows while remaining well below automated scraping rates.
 
 **FR-P13** robots.txt published, prohibiting known AI crawler, scraper, and automated agent user agents.
 
@@ -1172,6 +1173,187 @@ Every recommendation includes:
 4. An explicit statement of what factors were NOT considered — factors outside the seven wizard questions are not reflected in the recommendation.
 
 The recommendation engine is fully deterministic: the same knowledge base version and environment profile always produce the same recommendation.
+
+#### 14.5.4 Answer options
+
+Each environment profile question accepts one of the following answer values. Answer identifiers are stable and used by the scoring engine.
+
+| ID | Type | Options |
+|---|---|---|
+| EQ-01 | Single-select | `windows_11` — Windows 11; `windows_server_2022` — Windows Server 2022; `ubuntu_22` — Ubuntu 22.04; `ubuntu_24` — Ubuntu 24.04; `rhel_8_9` — Red Hat Enterprise Linux 8/9; `macos` — macOS; `other` — Other / not listed |
+| EQ-02 | Single-select | `government_defence` — Government or defence organisation; `regulated_industry` — Finance, healthcare, critical infrastructure, or other sector with regulatory obligations; `commercial_unregulated` — Commercial organisation without sector-specific mandates |
+| EQ-03 | Boolean | `yes` — Machine-readable format required; `no` — Not required |
+| EQ-04 | Boolean | `yes` — Baseline must be free to access; `no` — Paid baselines acceptable |
+| EQ-05 | Boolean | `yes` — Continuous compliance tooling needed; `no` — Not required |
+| EQ-06 | Boolean | `yes` — Formal review process rigour matters; `no` — Not a priority |
+| EQ-07 | Single-select | `per_setting` — Exact setting paths and values (registry keys, sysctl parameters); `per_control` — Control-level guidance (what to achieve, not exact settings); `principle_level` — Strategic goals and priorities without implementation detail |
+
+#### 14.5.5 Base weight vector
+
+Each attribute carries a base weight on a 0–3 integer scale. Attributes with base weight 0 are excluded from the weighted score (informational only, or hard-filtered by EQ-01/EQ-04). The effective weight is the base weight plus any applicable EQ modifier (§14.5.6), capped at 4.
+
+| # | attribute_id | Base | Rationale |
+|---|---|---|---|
+| 1 | issuer_name | 0 | Informational; not a selection differentiator |
+| 2 | issuer_type | 1 | Mild trust signal; authority type is contextual |
+| 3 | baseline_type | 2 | Differentiates benchmarks from frameworks; affects applicability |
+| 4 | baseline_version | 0 | Informational; currency captured by last_update_date (#23) |
+| 5 | initial_release_date | 0 | Informational; maturity captured by adoption_breadth (#44) |
+| 6 | country_of_origin | 0 | Informational in v1; jurisdiction-aware scoring deferred to v2 multi-tenant |
+| 7 | target_platforms | 0 | Hard-filtered by EQ-01; excluded from scoring |
+| 8 | platform_type | 1 | Contextual after hard filter; confirms platform breadth |
+| 9 | role_targeting | 2 | Workstation focus is a key differentiator for the v1 use case |
+| 10 | scope_depth | 3 | Critical: full-surface vs strategic-subset directly affects applicability |
+| 11 | composability | 2 | Operational complexity of adoption; standalone is simpler |
+| 12 | prescriptiveness | 3 | Critical differentiator; EQ-07 adjusts preference direction |
+| 13 | version_granularity | 1 | Affects update planning; mild relevance |
+| 14 | setting_count | 1 | Size indicator; not directly comparable across baseline types |
+| 15 | rationale_per_setting | 2 | Transparency enables informed implementation decisions |
+| 16 | default_value_documented | 2 | Operational utility for assessing change impact |
+| 17 | audit_procedure_specificity | 2 | Verification capability |
+| 18 | fix_procedure_specificity | 2 | Implementation guidance quality |
+| 19 | impact_assessment | 2 | Operational risk visibility |
+| 20 | severity_classification | 2 | Prioritisation support |
+| 21 | conflict_documentation | 1 | Rare but valuable for multi-baseline environments |
+| 22 | update_cadence | 2 | Currency and responsiveness to new threats |
+| 23 | last_update_date | 2 | Currency signal; recency-scored (§14.5.7 Category F) |
+| 24 | new_os_coverage_lag | 2 | Relevance for environments running recent OS releases |
+| 25 | changelog_transparency | 1 | Operational planning for updates |
+| 26 | review_process | 2 | Trust and credibility |
+| 27 | reviewer_diversity | 1 | Trust signal |
+| 28 | errata_process | 1 | Quality assurance indicator |
+| 29 | retirement_process | 1 | Lifecycle planning |
+| 30 | access_cost | 0 | Hard-filtered by EQ-04; excluded from scoring |
+| 31 | licence_type | 1 | Affects redistribution and tooling flexibility |
+| 32 | language_availability | 0 | Informational in v1; all in-scope baselines available in English |
+| 33 | primary_format | 2 | Machine-readability |
+| 34 | scap_compliance_level | 2 | Automation standard compliance |
+| 35 | remediation_formats | 2 | Enforcement tooling coverage |
+| 36 | variable_parameterisation | 1 | Customisation capability |
+| 37 | assessment_tooling | 2 | Verification automation |
+| 38 | diff_tooling | 1 | Operational utility for version transitions |
+| 39 | continuous_compliance | 2 | Drift detection capability |
+| 40 | management_tool_alignment | 2 | Deployment integration |
+| 41 | profile_inheritance | 1 | Flexibility for layered configurations |
+| 42 | compliance_framework_mapping | 2 | Regulatory traceability |
+| 43 | regulatory_recognition | 2 | Compliance acceptance |
+| 44 | adoption_breadth | 1 | Ecosystem and community signal |
+| 45 | cross_baseline_mapping | 1 | Flexibility for mixed environments |
+
+#### 14.5.6 EQ-driven weight modifiers
+
+Each modifier adds +1 to the base weight of the listed attributes when the condition is met. Effective weight is capped at 4. Multiple modifiers may apply to the same attribute.
+
+| EQ | Condition | Affected attributes | Rationale |
+|---|---|---|---|
+| EQ-02 | `government_defence` or `regulated_industry` | compliance_framework_mapping, regulatory_recognition | Regulated environments value formal compliance mappings |
+| EQ-03 | `yes` | primary_format, scap_compliance_level, remediation_formats, variable_parameterisation | Machine-readable consumers need parseable and enforceable formats |
+| EQ-05 | `yes` | assessment_tooling, continuous_compliance, management_tool_alignment | Continuous compliance requires tooling integration |
+| EQ-06 | `yes` | review_process, reviewer_diversity, errata_process | Governance-conscious users value review rigour and transparency |
+| EQ-07 | `per_setting` | setting_count, audit_procedure_specificity, fix_procedure_specificity | Per-setting users need granular audit and remediation procedures |
+
+#### 14.5.7 Compatibility scoring rules
+
+Each attribute value is mapped to a compatibility score on a [0, 1] scale. The weighted score for a baseline is:
+
+**Score** = Σ (effective_weight × compatibility_score) / Σ effective_weight
+
+where the sums range over all scored attributes (effective weight > 0) that have a non-missing value. Missing values are excluded from both numerator and denominator — they neither help nor penalise. The confidence adjustment (§14.5.2) separately flags baselines with many missing high-weight attributes.
+
+**Category A — Not scored.** Attributes with base weight 0: issuer_name (#1), baseline_version (#4), initial_release_date (#5), country_of_origin (#6), target_platforms (#7), access_cost (#30), language_availability (#32). Present in the knowledge base for informational purposes. target_platforms and access_cost participate via hard filters only.
+
+**Category B — Boolean.** Score = 1.0 if true, 0.0 if false. Attributes: conflict_documentation (#21), diff_tooling (#38), continuous_compliance (#39), variable_parameterisation (#36), profile_inheritance (#41).
+
+**Category C — Ordered enum (universally ordered).** Values are mapped to fixed scores reflecting intrinsic quality for baseline selection, independent of environment profile.
+
+| attribute_id | 1.0 | 0.75 | 0.5 | 0.25 | 0.0 |
+|---|---|---|---|---|---|
+| issuer_type | standards_body | government_military | open_source_community, academic | vendor | — |
+| baseline_type | technical_benchmark | checklist_repository | strategic_framework, isms_module | — | — |
+| scope_depth | full_surface | — | component_specific, strategic_subset | architectural | — |
+| composability | standalone | modular_framework | composition_required | — | — |
+| version_granularity | per_build | per_major_version | per_os_family | version_agnostic | — |
+| rationale_per_setting | yes_all | — | yes_partial | — | no |
+| default_value_documented | yes_all | — | yes_partial | — | no |
+| audit_procedure_specificity | machine_verifiable | step_by_step | — | descriptive | none |
+| fix_procedure_specificity | machine_executable | step_by_step | — | descriptive | none |
+| impact_assessment | per_setting | — | aggregate_only | — | none |
+| severity_classification | yes_granular | — | yes_tiered | — | no |
+| changelog_transparency | per_setting_diff | summary_changelog | — | version_number_only | none |
+| review_process | formal_consensus | government_authority | open_source_pr | vendor_internal | unknown |
+| reviewer_diversity | multi_stakeholder | single_org_multi_team | — | single_team | unknown |
+| errata_process | formal_published | — | inline_revision | — | unknown |
+| retirement_process | explicit_eol | — | not_applicable | implicit_abandonment | unknown |
+| new_os_coverage_lag | days_to_weeks | one_to_six_months | — | six_to_twelve_months | twelve_plus_months |
+| update_cadence | continuous | quarterly | per_os_release | annual | irregular |
+| scap_compliance_level | scap_validated | — | scap_conformant | — | none |
+| assessment_tooling | dedicated_tool | integrated_platform | — | third_party_only | none |
+| adoption_breadth | widespread | sector_standard | — | niche | emerging |
+| licence_type | open_source | government_public | proprietary_free | proprietary_paid | — |
+
+**Category D — Preference-dependent enum.** Scoring depends on the environment profile answer.
+
+prescriptiveness (#12) — scored relative to EQ-07:
+
+| EQ-07 answer | per_setting | per_control | principle_level |
+|---|---|---|---|
+| `per_setting` | 1.0 | 0.5 | 0.0 |
+| `per_control` | 0.5 | 1.0 | 0.5 |
+| `principle_level` | 0.0 | 0.5 | 1.0 |
+
+**Category E — Multi-value attributes** (Enum (multi) data type). Score reflects how well the baseline's value set matches the user's context.
+
+| attribute_id | Scoring rule |
+|---|---|
+| platform_type (#8) | 1.0 if the set includes the type matching EQ-01 (e.g., `operating_system` for all desktop/server OS selections); 0.0 otherwise |
+| role_targeting (#9) | 1.0 if includes `workstation`; 0.75 if includes `not_role_specific`; 0.0 otherwise (v1 is workstation-focused) |
+| primary_format (#33) | Highest score among values: `scap_xccdf` = 1.0; `gpo_export`, `intune_template`, `ansible_role`, `script`, `structured_data` = 0.75; `pdf_prose` = 0.25 |
+| remediation_formats (#35) | Count of available formats (excluding `none`) / 8. `none` alone = 0.0 |
+| compliance_framework_mapping (#42) | Count of mapped frameworks (excluding `none_explicit`) / 11. `none_explicit` alone = 0.0 |
+| regulatory_recognition (#43) | Count of recognised regimes (excluding `none_known`) / 8. `none_known` alone = 0.0 |
+| management_tool_alignment (#40) | Highest score: `gpo_native`, `intune_native`, `ansible_native`, `openscap_native` = 1.0; `other` = 0.5; `tool_agnostic` = 0.25 |
+
+**Category F — Recency-scored (Date).**
+
+last_update_date (#23) — scored relative to the knowledge base generation date:
+
+| Age | Score | Rationale |
+|---|---|---|
+| ≤ 6 months | 1.0 | Current |
+| ≤ 12 months | 0.75 | Recent |
+| ≤ 24 months | 0.5 | Ageing |
+| ≤ 36 months | 0.25 | Stale |
+| > 36 months | 0.0 | Outdated |
+
+Thresholds reflect the expectation that security baselines for actively maintained platforms should be refreshed at least annually.
+
+**Category G — Range-normalised (Integer).**
+
+setting_count (#14) — score = (value − min) / (max − min) among non-null in-scope baselines. If all non-null values are identical, score = 1.0. Null values are treated as missing per §14.1.4.
+
+#### 14.5.8 High-weight definition
+
+An attribute is **high-weight** when its effective weight (base weight + applicable EQ modifiers, capped at 4) is ≥ 3. The confidence adjustment in §14.5.2 uses this definition: more than three missing high-weight attributes triggers the low-confidence flag.
+
+Attributes that can reach high-weight status:
+
+| attribute_id | Base | Reaches ≥ 3 via |
+|---|---|---|
+| scope_depth | 3 | Always high-weight |
+| prescriptiveness | 3 | Always high-weight |
+| compliance_framework_mapping | 2 | EQ-02 regulated → 3 |
+| regulatory_recognition | 2 | EQ-02 regulated → 3 |
+| primary_format | 2 | EQ-03 yes → 3 |
+| scap_compliance_level | 2 | EQ-03 yes → 3 |
+| remediation_formats | 2 | EQ-03 yes → 3 |
+| assessment_tooling | 2 | EQ-05 yes → 3 |
+| continuous_compliance | 2 | EQ-05 yes → 3 |
+| management_tool_alignment | 2 | EQ-05 yes → 3 |
+| review_process | 2 | EQ-06 yes → 3 |
+| audit_procedure_specificity | 2 | EQ-07 per_setting → 3 |
+| fix_procedure_specificity | 2 | EQ-07 per_setting → 3 |
+
+The maximum number of simultaneously high-weight attributes ranges from 2 (no EQ modifiers active) to 13 (all EQ modifiers active). The low-confidence threshold of 3 missing high-weight attributes is therefore meaningful across all profile configurations.
 
 ---
 
@@ -1318,6 +1500,7 @@ All open functional decisions from the design phase are resolved. This section s
 | OFD-03 | Export format scope: both UC-06a (PDF) and UC-06b (markdown) in v1. | PDF for formal governance attachments; markdown for direct integration into documentation repos. Both serve distinct governance workflows. | Author FD recommendation, HM accepted | UC-06a, UC-06b |
 | OFD-04 | Access control gate in v1: IP-based acceptance log (no application-level auth required); legally grounded under privacy statement §8.2.1. HTTP Basic Auth on BST URL while GT&C is in preparation. Per-user forensic log in v2. | Avoids premature authentication infrastructure while satisfying legal logging requirements. v2 adds per-user identity when multi-tenant is implemented. | Author FD recommendation, HM accepted | FR-P16, §5.3, §18.5 go-live gate |
 | OFD-05 | Knowledge base serving mechanism: PHP-gated endpoint. Direct static file URL blocked. | Prevents direct URL access to the JSON file, forcing all access through the rate-limited, header-enforced PHP layer. Requires PHP thin layer (confirmed in architecture). | Author FD recommendation, HM accepted | FR-P09 |
+| OFD-06 | Weight vector, EQ answer options, and compatibility scoring rules specified in the FD (§14.5.4–14.5.8), not deferred to the TD. | The weight vector defines the BST's opinion about which attributes matter and how much — a product/business decision, not a technical implementation detail. Deferring to the TD would leave the recommendation's behaviour undefined at the functional level, violating the parameterised behavioural thresholds extension. The specific values are Author FD recommendations subject to HM calibration. | Author FD recommendation | §14.5.4–14.5.8 |
 
 ---
 
