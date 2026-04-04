@@ -247,7 +247,7 @@ jobs:
       # Suppression inventory operations remain on FACTORY_PAT (TD-076-TC-10).
       - name: Generate GitHub App token
         id: app-token
-        if: vars.QF_APP_ID != '' && secrets.QF_APP_PRIVATE_KEY != ''
+        if: vars.QF_APP_ID != ''
         uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
           app-id: ${{ vars.QF_APP_ID }}
