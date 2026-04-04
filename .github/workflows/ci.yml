@@ -240,6 +240,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      # ── GitHub App token for CI-triggering pushes (§issue #76) ─────────
+      # Generates a short-lived installation token from the quality-factory-ci
+      # GitHub App. Pushes authenticated with this token trigger pull_request
+      # events (unlike PAT pushes). Available as steps.app-token.outputs.token.
+      # Suppression inventory operations remain on FACTORY_PAT (TD-076-TC-10).
+      - name: Generate GitHub App token
+        id: app-token
+        if: vars.QF_APP_ID != '' && secrets.QF_APP_PRIVATE_KEY != ''
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ vars.QF_APP_ID }}
+          private-key: ${{ secrets.QF_APP_PRIVATE_KEY }}
+
       # ── Protected file detection (§Protected File Enforcement #1-#3) ───
       # Reads PROTECTED_FILES.md for the file list — no per-repo CI
       # customization needed. Each repo adds files to its own inventory.
@@ -670,10 +683,17 @@ jobs:
           fi
 
           # Type checking with mypy if available.
+          # Invoke mypy without explicit file arguments so it respects
+          # pyproject.toml [tool.mypy] settings (files, exclude, etc.).
+          # When no mypy config exists, fall back to --ignore-missing-imports
+          # to avoid spurious failures from missing stubs.
           if command -v mypy > /dev/null 2>&1; then
             echo "Running mypy..."
-            find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' \
-              | xargs mypy --ignore-missing-imports || LINT_FAILED=1
+            if python -c "import tomllib, pathlib, sys; cfg = tomllib.loads(pathlib.Path('pyproject.toml').read_text()); sys.exit(0 if 'mypy' in cfg.get('tool', {}) else 1)" 2>/dev/null; then
+              python -m mypy || LINT_FAILED=1
+            else
+              python -m mypy --ignore-missing-imports || LINT_FAILED=1
+            fi
           fi
 
           if [ "$LINT_FAILED" -ne 0 ]; then

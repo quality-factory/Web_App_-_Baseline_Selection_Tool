@@ -19,6 +19,7 @@ jobs:
           egress-policy: audit
 
       - name: Validate PR title
+        if: github.event_name == 'pull_request'
         shell: bash
         env:
           TITLE: ${{ github.event.pull_request.title }}
