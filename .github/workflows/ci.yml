@@ -97,9 +97,9 @@ jobs:
       is-fork: ${{ github.event.pull_request.head.repo.fork == true }}
     steps:
       # Runner hardening — monitors network egress and process activity.
-      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.0
+      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
       - name: Harden runner
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
 
@@ -229,9 +229,9 @@ jobs:
 
     steps:
       # Runner hardening — monitors network egress and process activity.
-      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.0
+      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
       - name: Harden runner
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
 
@@ -644,7 +644,7 @@ jobs:
       # Conditional on language detection.
       - name: Set up Python
         if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.14'
 
@@ -857,9 +857,9 @@ jobs:
 
     steps:
       # Runner hardening — monitors network egress and process activity.
-      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.0
+      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
       - name: Harden runner
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
 
@@ -1127,7 +1127,7 @@ jobs:
       # §CI-Time Enforcement #7: pytest with coverage.
       - name: Set up Python (test)
         if: needs.detect.outputs.has-python == 'true' && needs.detect.outputs.has-powershell != 'true'
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.14'
 
@@ -1407,9 +1407,9 @@ jobs:
 
     steps:
       # Runner hardening — monitors network egress and process activity.
-      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.0
+      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
       - name: Harden runner
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
 
