@@ -31,16 +31,19 @@ concurrency:
 
 jobs:
   # ┌──────────────────────────────────────────────────────────────────────┐
-  # │ Four-job pipeline: detect → lint (Ubuntu) → test (per-language)     │
-  # │                    detect → compliance (Ubuntu)                     │
+  # │ Six-job pipeline: detect → lint (Ubuntu) → test-powershell (Win)     │
+  # │                   detect → lint (Ubuntu) → test-python (Ubuntu)     │
+  # │                   detect → lint (Ubuntu) → test-php (Ubuntu)        │
+  # │                   detect → compliance (Ubuntu)                      │
   # │                                                                     │
-  # │ Job: detect (ubuntu-latest)                                         │
+  # │ Job: detect (ubuntu-24.04)                                          │
   # │  #  Step                          Code  Non-code  Draft  CI-only    │
   # │  1  Checkout                       Y       Y        Y      Y        │
   # │  2  Detect language markers        Y       Y        Y      Y        │
   # │  3  Detect code changes            Y       Y        Y      Y        │
+  # │  4  Governance drift check         Y       Y        Y      Y        │
   # │                                                                     │
-  # │ Job: lint (ubuntu-latest, needs: detect)                            │
+  # │ Job: lint (ubuntu-24.04, needs: detect)                             │
   # │  #  Step                          Code  Non-code  Draft  CI-only    │
   # │  1  Checkout                       Y       Y        N      N        │
   # │  2  Protected file detection       Y       Y        N      N        │
@@ -54,17 +57,47 @@ jobs:
   # │ 10  PHP: syntax + lint             Y(PHP)  N        N      N        │
   # │ 11  SCA advisory check (info)      Y       N        N      N        │
   # │                                                                     │
-  # │ Job: test (per-language runner, needs: lint)                        │
+  # │ Job: test-powershell (windows-2025, needs: [detect, lint])          │
   # │  #  Step                          Code  Non-code  Draft  CI-only    │
-  # │  1  PS: Pester + coverage (Win)   Y(PS)   N        N      N        │
-  # │  2  Python: pytest + coverage     Y(Py)   N        N      N        │
-  # │  3  PHP: phpunit                  Y(PHP)  N        N      N        │
-  # │  4  Coverage enforcement           Y       N        N      N        │
-  # │  5  Publish test summary           Y       N        N      N        │
-  # │  6  Upload test results            Y       N        N      N        │
-  # │  7  Upload coverage                Y       N        N      N        │
+  # │  1  Harden runner                  Y(PS)   N        N      N        │
+  # │  2  Checkout                       Y(PS)   N        N      N        │
+  # │  3  Inject build version           Y(PS)   N        N      N        │
+  # │  4  Ensure PS module cache dir     Y(PS)   N        N      N        │
+  # │  5  Cache PS modules               Y(PS)   N        N      N        │
+  # │  6  Install PSScriptAnalyzer       Y(PS)   N        N      N        │
+  # │  7  Sign scripts                   Y(PS)   N        N      N        │
+  # │  8  Install Pester                 Y(PS)   N        N      N        │
+  # │  9  Run Pester tests               Y(PS)   N        N      N        │
+  # │ 10  Enforce coverage threshold     Y(PS)   N        N      N        │
+  # │ 11  Diff-level coverage (PS)       Y(PS)   N        N      N        │
+  # │ 12  Publish test summary           Y(PS)   N        N      N        │
+  # │ 13  Upload test results            Y(PS)   N        N      N        │
+  # │ 14  Upload coverage                Y(PS)   N        N      N        │
   # │                                                                     │
-  # │ Job: compliance (ubuntu-latest, needs: detect)                      │
+  # │ Job: test-python (ubuntu-24.04, needs: [detect, lint])              │
+  # │  #  Step                          Code  Non-code  Draft  CI-only    │
+  # │  1  Harden runner                  Y(Py)   N        N      N        │
+  # │  2  Checkout                       Y(Py)   N        N      N        │
+  # │  3  Inject build version           Y(Py)   N        N      N        │
+  # │  4  Set up Python                  Y(Py)   N        N      N        │
+  # │  5  Install Python dependencies    Y(Py)   N        N      N        │
+  # │  6  Run Python tests               Y(Py)   N        N      N        │
+  # │  7  Enforce Python coverage        Y(Py)   N        N      N        │
+  # │  8  Diff-level coverage (Python)   Y(Py)   N        N      N        │
+  # │  9  Publish test summary           Y(Py)   N        N      N        │
+  # │ 10  Upload test results            Y(Py)   N        N      N        │
+  # │ 11  Upload coverage                Y(Py)   N        N      N        │
+  # │                                                                     │
+  # │ Job: test-php (ubuntu-24.04, needs: [detect, lint])                 │
+  # │  #  Step                          Code  Non-code  Draft  CI-only    │
+  # │  1  Harden runner                  Y(PHP)  N        N      N        │
+  # │  2  Checkout                       Y(PHP)  N        N      N        │
+  # │  3  Inject build version           Y(PHP)  N        N      N        │
+  # │  4  Run PHP tests                  Y(PHP)  N        N      N        │
+  # │  5  Publish test summary           Y(PHP)  N        N      N        │
+  # │  6  Upload test results            Y(PHP)  N        N      N        │
+  # │                                                                     │
+  # │ Job: compliance (ubuntu-24.04, needs: detect)                       │
   # │  #  Step                          Code  Non-code  Draft  CI-only    │
   # │  1  Doc coverage (info)            Y       Y        N      N        │
   # │  2  License compliance (info)      Y       N        N      N        │
@@ -85,7 +118,8 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════
   detect:
     name: Detect
-    runs-on: ubuntu-latest
+    # Pinned runner labels: avoid silent image drift (CR #126 / TD-126-DD-01).
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       has-python: ${{ steps.languages.outputs.has-python }}
@@ -94,14 +128,24 @@ jobs:
       has-docs: ${{ steps.languages.outputs.has-docs }}
       code-changed: ${{ steps.changes.outputs.code-changed }}
       source-changed: ${{ steps.changes.outputs.source-changed }}
+      diff-unavailable: ${{ steps.changes.outputs.diff-unavailable }}
+      python-changed: ${{ steps.changes.outputs.python-changed }}
+      powershell-changed: ${{ steps.changes.outputs.powershell-changed }}
+      php-changed: ${{ steps.changes.outputs.php-changed }}
       is-fork: ${{ github.event.pull_request.head.repo.fork == true }}
+      governance-drift: ${{ steps.governance-drift.outputs.governance-drift }}
     steps:
       # Runner hardening — monitors network egress and process activity.
       # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
       - name: Harden runner
         uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            agent.api.stepsecurity.io:443
+            objects.githubusercontent.com:443
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -152,6 +196,10 @@ jobs:
             echo "Scheduled run — enabling SCA checks, skipping test execution."
             echo "code-changed=true" >> "$GITHUB_OUTPUT"
             echo "source-changed=false" >> "$GITHUB_OUTPUT"
+            echo "diff-unavailable=false" >> "$GITHUB_OUTPUT"
+            echo "python-changed=false" >> "$GITHUB_OUTPUT"
+            echo "powershell-changed=false" >> "$GITHUB_OUTPUT"
+            echo "php-changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -169,20 +217,29 @@ jobs:
           fi
 
           if [ -z "$BASE" ]; then
-            echo "Cannot determine base commit — assuming changed (fail-closed)."
+            echo "::warning::Cannot determine base commit — diff unavailable, running all checks (fail-closed)."
             echo "code-changed=true" >> "$GITHUB_OUTPUT"
             echo "source-changed=true" >> "$GITHUB_OUTPUT"
+            echo "diff-unavailable=true" >> "$GITHUB_OUTPUT"
+            echo "python-changed=true" >> "$GITHUB_OUTPUT"
+            echo "powershell-changed=true" >> "$GITHUB_OUTPUT"
+            echo "php-changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           FILES=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
           if [ -z "$FILES" ]; then
-            echo "No changed files detected or diff failed — assuming changed (fail-closed)."
+            echo "::warning::No changed files detected or diff failed — diff unavailable, running all checks (fail-closed)."
             echo "code-changed=true" >> "$GITHUB_OUTPUT"
             echo "source-changed=true" >> "$GITHUB_OUTPUT"
+            echo "diff-unavailable=true" >> "$GITHUB_OUTPUT"
+            echo "python-changed=true" >> "$GITHUB_OUTPUT"
+            echo "powershell-changed=true" >> "$GITHUB_OUTPUT"
+            echo "php-changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          echo "diff-unavailable=false" >> "$GITHUB_OUTPUT"
           echo "Changed files:"
           echo "$FILES"
 
@@ -206,6 +263,160 @@ jobs:
             echo "source-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # Per-language change flags — gate language-specific lint steps.
+          if echo "$FILES" | grep -qE '\.py$'; then
+            echo "python-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "python-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$FILES" | grep -qE '\.(ps1|psm1|psd1)$'; then
+            echo "powershell-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "powershell-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$FILES" | grep -qE '\.php$'; then
+            echo "php-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "php-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Governance drift check (TD-080-ARCH-COMP-01) ───────────────────
+      # Compares identical-required governance files against the factory
+      # repo's canonical copies via the git tree API. Fails hard on drift;
+      # fails open on infrastructure errors (API unreachable).
+      # §CI-Time Enforcement #23: Retry with exponential backoff.
+      - name: Governance drift check
+        id: governance-drift
+        if: >-
+          github.repository != 'quality-factory/Infra_-_Subscription_Factory'
+          && !(github.head_ref != '' && startsWith(github.head_ref, 'governance-changes/'))
+          && !(github.head_ref == '' && startsWith(github.ref, 'refs/heads/governance-changes/'))
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Identical-required files — must match IDENTICAL_REQUIRED in
+          # scripts/sync-governance.py (TD-080-ARCH-TC-07, FM-06).
+          GOVERNANCE_FILES=(
+            "AGENTS.md"
+            ".github/ISSUE_TEMPLATE/bug.yml"
+            ".github/ISSUE_TEMPLATE/change-request.yml"
+            ".github/ISSUE_TEMPLATE/refactoring.yml"
+            ".github/ISSUE_TEMPLATE/config.yml"
+            ".pre-commit-config.yaml"
+            ".github/workflows/pr-title.yml"
+            ".github/workflows/ci.yml"
+            "vendor/hooks/protected-file-check.sh"
+            "vendor/hooks/conventional-commit.sh"
+            "vendor/hooks/detect-secrets.sh"
+            "vendor/hooks/no-suppressions.sh"
+            "vendor/hooks/prepare-commit-template.sh"
+            "vendor/hooks/pre-push-verify.sh"
+            "vendor/hooks/end-of-file-fixer.py"
+            "scripts/local-ci.py"
+          )
+
+          FACTORY_REPO="quality-factory/Infra_-_Subscription_Factory"
+          API_URL="https://api.github.com/repos/${FACTORY_REPO}/git/trees/main?recursive=1"
+          MAX_RETRIES=4
+
+          # ── Fetch canonical tree with retry ──────────────────────────────
+          TREE_JSON=""
+          for attempt in $(seq 0 $MAX_RETRIES); do
+            if [ "$attempt" -gt 0 ]; then
+              delay=$((2 ** attempt))
+              echo "Retry $attempt/$MAX_RETRIES in ${delay}s..."
+              sleep "$delay"
+            fi
+
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/tree-response.json \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$API_URL")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              TREE_JSON=$(cat /tmp/tree-response.json)
+              break
+            elif [ "$HTTP_CODE" = "404" ]; then
+              echo "::error::Factory repository not accessible (HTTP 404) — check GITHUB_TOKEN permissions."
+              echo "governance-drift=false" >> "$GITHUB_OUTPUT"
+              exit 1
+            else
+              echo "::warning::Tree API returned HTTP $HTTP_CODE (attempt $((attempt + 1))/$((MAX_RETRIES + 1)))."
+            fi
+          done
+
+          if [ -z "$TREE_JSON" ]; then
+            echo "::warning::Failed to fetch canonical tree after $((MAX_RETRIES + 1)) attempts — failing open."
+            echo "governance-drift=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Check for truncation.
+          TRUNCATED=$(echo "$TREE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('truncated', False))" 2>/dev/null || echo "False")
+          if [ "$TRUNCATED" = "True" ]; then
+            echo "::warning::Tree API response is truncated — comparing available files only."
+          fi
+
+          # ── Build canonical SHA map ──────────────────────────────────────
+          # Extract {path: sha} for blobs into a temp file for lookup.
+          echo "$TREE_JSON" | python3 -c "
+          import sys, json
+          tree = json.load(sys.stdin).get('tree', [])
+          for entry in tree:
+              if entry.get('type') == 'blob':
+                  print(entry['path'] + '\t' + entry['sha'])
+          " > /tmp/canonical-shas.tsv
+
+          # ── Compare each governance file ─────────────────────────────────
+          DRIFT_COUNT=0
+          DRIFT_FILES=""
+          for file in "${GOVERNANCE_FILES[@]}"; do
+            # Skip files that don't exist locally (handled by sync script).
+            if [ ! -f "$file" ]; then
+              continue
+            fi
+
+            # Compute local blob SHA-1.
+            LOCAL_SHA=$(git hash-object "$file")
+
+            # Look up canonical SHA-1 (awk exact match — no regex wildcards on dots in paths).
+            CANONICAL_SHA=$(awk -F'\t' -v f="$file" '$1 == f {print $2}' /tmp/canonical-shas.tsv)
+            if [ -z "$CANONICAL_SHA" ]; then
+              echo "Canonical file not found in tree: $file (skipping)"
+              continue
+            fi
+
+            if [ "$LOCAL_SHA" != "$CANONICAL_SHA" ]; then
+              DRIFT_COUNT=$((DRIFT_COUNT + 1))
+              DRIFT_FILES="${DRIFT_FILES}${file}\n"
+              echo "::error::DIVERGED: $file"
+              echo "  This file is governance-controlled. Submit a Change Request to Infra_-_Subscription_Factory to propose changes to canonical files."
+            else
+              echo "OK: $file"
+            fi
+          done
+
+          # ── Report results ───────────────────────────────────────────────
+          if [ "$DRIFT_COUNT" -gt 0 ]; then
+            echo ""
+            echo "Governance drift detected:"
+            echo -e "$DRIFT_FILES" | while IFS= read -r f; do
+              [ -n "$f" ] && echo "  DIVERGED: $f"
+            done
+            echo ""
+            echo "$DRIFT_COUNT governance file(s) diverged from canonical."
+            echo "governance-drift=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo ""
+            echo "Governance files in sync with canonical."
+            echo "governance-drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # ════════════════════════════════════════════════════════════════════════
   # Job 2: Lint and Scan (Ubuntu — 1x billing rate)
   # Universal checks that do not require Windows. Language-specific linting
@@ -218,7 +429,7 @@ jobs:
     needs: [detect]
     # Skip draft PRs; push and schedule events always run. §CI-Time Enforcement #4, #8.
     if: github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -233,7 +444,18 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            agent.api.stepsecurity.io:443
+            objects.githubusercontent.com:443
+            cache.actions.githubusercontent.com:443
+            www.powershellgallery.com:443
+            psg-prod-eastus.azureedge.net:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            api.osv.dev:443
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -506,7 +728,7 @@ jobs:
 
       # ── PowerShell: Ensure PS module cache directory ───────────────────
       - name: Ensure PS module cache directory exists
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        if: needs.detect.outputs.powershell-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
         run: |
           # On Linux, the user-writable PSModulePath entry is ~/.local/share/powershell/Modules.
@@ -516,11 +738,11 @@ jobs:
 
       # ── PowerShell: Cache PS modules ───────────────────────────────────
       - name: Cache PS modules (Ubuntu)
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        if: needs.detect.outputs.powershell-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.local/share/powershell/Modules
-          key: ps-modules-${{ runner.os }}-pssa1.25.0
+          key: ps-modules-${{ runner.os }}-${{ env.ImageVersion }}-pssa1.25.0
 
       # ── PowerShell: Install PSScriptAnalyzer (integrity-verified) ──────
       # §CI-Time Enforcement #10: SAST via PSScriptAnalyzer.
@@ -529,7 +751,7 @@ jobs:
       # 2. To obtain the hash: Save-Module PSScriptAnalyzer -RequiredVersion <ver> -Path ./tmp
       #    then (Get-FileHash ./tmp/PSScriptAnalyzer/<ver>/PSScriptAnalyzer.psd1 -Algorithm SHA256).Hash
       - name: Install PSScriptAnalyzer
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        if: needs.detect.outputs.powershell-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
         env:
           PSSA_VERSION: '1.25.0'
@@ -585,7 +807,7 @@ jobs:
       # Uses Invoke-Formatter with project settings if available.
       # Detects and reports formatting drift; fails if drift is found.
       - name: Auto-format PowerShell files
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        if: needs.detect.outputs.powershell-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
         run: |
           $settingsFile = '.PSScriptAnalyzerSettings.psd1'
@@ -617,7 +839,7 @@ jobs:
       #     PSAvoidUsingUsernameAndPasswordParams -> CWE-798 (hardcoded creds)
       #   Custom AST rules (tests/rules/*.psm1): loaded if present.
       - name: Run PSScriptAnalyzer
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
+        if: needs.detect.outputs.powershell-changed == 'true' && needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
         run: |
           $settingsFile = '.PSScriptAnalyzerSettings.psd1'
@@ -643,13 +865,14 @@ jobs:
       # §CI-Time Enforcement #10: Python SAST via ruff/pylint/mypy.
       # Conditional on language detection.
       - name: Set up Python
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        if: needs.detect.outputs.python-changed == 'true' && needs.detect.outputs.has-python == 'true'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.14'
+          cache: 'pip'
 
       - name: Install Python dependencies
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        if: needs.detect.outputs.python-changed == 'true' && needs.detect.outputs.has-python == 'true'
         shell: bash
         run: |
           python -m pip install --upgrade pip
@@ -658,14 +881,14 @@ jobs:
           if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
 
       - name: Python compile check
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        if: needs.detect.outputs.python-changed == 'true' && needs.detect.outputs.has-python == 'true'
         shell: bash
         run: |
           find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' \
             -exec python -m py_compile {} +
 
       - name: Python lint
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-python == 'true'
+        if: needs.detect.outputs.python-changed == 'true' && needs.detect.outputs.has-python == 'true'
         shell: bash
         run: |
           LINT_FAILED=0
@@ -705,7 +928,7 @@ jobs:
       # ── PHP: Syntax check and lint ─────────────────────────────────────
       # §CI-Time Enforcement #10: PHP syntax + static analysis.
       - name: PHP syntax check
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-php == 'true'
+        if: needs.detect.outputs.php-changed == 'true' && needs.detect.outputs.has-php == 'true'
         shell: bash
         run: |
           ERRORS=0
@@ -721,7 +944,7 @@ jobs:
           echo "PHP syntax check: no errors."
 
       - name: PHP lint
-        if: needs.detect.outputs.code-changed == 'true' && needs.detect.outputs.has-php == 'true'
+        if: needs.detect.outputs.php-changed == 'true' && needs.detect.outputs.has-php == 'true'
         shell: bash
         run: |
           if command -v phpstan > /dev/null 2>&1; then
@@ -839,21 +1062,20 @@ jobs:
           # Informational — always exit 0.
 
   # ════════════════════════════════════════════════════════════════════════
-  # Job 3: Test (per-language runner, needs: lint)
-  # Only runs when source-changed is true. PowerShell tests require
-  # Windows; Python and PHP tests run on Ubuntu.
+  # Job 3a: Test — PowerShell (Windows, needs: [detect, lint])
+  # Only runs when source-changed and has-powershell are both true.
   # §CI-Time Enforcement #7: Tests with coverage enforcement.
   # ════════════════════════════════════════════════════════════════════════
-  test:
-    name: Test
+  test-powershell:
+    name: Test (PowerShell)
     needs: [detect, lint]
-    timeout-minutes: 30
-    # Skip draft PRs and scheduled runs. Only run when source files actually changed.
+    timeout-minutes: 15
     if: |
       github.event_name != 'schedule' &&
       (github.event_name == 'push' || github.event.pull_request.draft != true) &&
-      needs.detect.outputs.source-changed == 'true'
-    runs-on: ${{ (needs.detect.outputs.has-powershell == 'true') && 'windows-latest' || 'ubuntu-latest' }}
+      needs.detect.outputs.source-changed == 'true' &&
+      needs.detect.outputs.has-powershell == 'true'
+    runs-on: windows-2025
 
     steps:
       # Runner hardening — monitors network egress and process activity.
@@ -861,7 +1083,17 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            agent.api.stepsecurity.io:443
+            objects.githubusercontent.com:443
+            cache.actions.githubusercontent.com:443
+            www.powershellgallery.com:443
+            psg-prod-eastus.azureedge.net:443
+            results-receiver.actions.githubusercontent.com:443
+            productionresultssa0.blob.core.windows.net:443
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -913,7 +1145,7 @@ jobs:
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/Documents/PowerShell/Modules
-          key: ps-modules-${{ runner.os }}-pssa1.25.0-pester5.7.1
+          key: ps-modules-${{ runner.os }}-${{ env.ImageVersion }}-pssa1.25.0-pester5.7.1
 
       # ── PowerShell: Install PSScriptAnalyzer (needed for custom rule tests) ─
       - name: Install PSScriptAnalyzer (Windows)
@@ -969,7 +1201,7 @@ jobs:
       # §CI-Time Enforcement #9: Conditional on secrets.CODE_SIGNING_CERT_PFX.
       # Skipped for fork PRs (reduced-privilege execution — no secret access).
       - name: Sign scripts
-        if: needs.detect.outputs.has-powershell == 'true' && needs.detect.outputs.is-fork != 'true'
+        if: needs.detect.outputs.is-fork != 'true'
         shell: pwsh
         env:
           SIGNING_CERT_PFX: ${{ secrets.CODE_SIGNING_CERT_PFX }}
@@ -1123,55 +1355,6 @@ jobs:
           $config.TestResult.OutputPath    = './testResults.xml'
           Invoke-Pester -Configuration $config
 
-      # ── Python: Setup and test ─────────────────────────────────────────
-      # §CI-Time Enforcement #7: pytest with coverage.
-      - name: Set up Python (test)
-        if: needs.detect.outputs.has-python == 'true' && needs.detect.outputs.has-powershell != 'true'
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.14'
-
-      - name: Install Python dependencies (test)
-        if: needs.detect.outputs.has-python == 'true'
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
-
-      - name: Run Python tests
-        if: needs.detect.outputs.has-python == 'true'
-        shell: bash
-        run: |
-          if command -v pytest > /dev/null 2>&1; then
-            echo "Running pytest with coverage..."
-            if python -c "import pytest_cov" 2>/dev/null; then
-              pytest --tb=short --junitxml=testResults-python.xml --cov --cov-report=xml:coverage-python.xml
-            else
-              pytest --tb=short --junitxml=testResults-python.xml
-            fi
-          elif [ -d tests ] && find tests -name '*.py' | head -1 | grep -q .; then
-            echo "Running unittest..."
-            python -m unittest discover -s tests 2>&1
-          else
-            echo "No Python test framework detected — skipping."
-          fi
-
-      # ── PHP: Test ──────────────────────────────────────────────────────
-      # §CI-Time Enforcement #7: PHPUnit tests.
-      - name: Run PHP tests
-        if: needs.detect.outputs.has-php == 'true'
-        shell: bash
-        run: |
-          if command -v phpunit > /dev/null 2>&1; then
-            phpunit --log-junit testResults-php.xml
-          elif [ -f vendor/bin/phpunit ]; then
-            vendor/bin/phpunit --log-junit testResults-php.xml
-          else
-            echo "No PHP test runner found — skipping."
-          fi
-
       # ── Coverage enforcement (§CI-Time Enforcement #7) ─────────────────
       # Threshold from vars.COVERAGE_THRESHOLD repo variable.
       # Default behavior: informational (skip enforcement if not set).
@@ -1227,6 +1410,193 @@ jobs:
             exit 1
           }
           Write-Host "Coverage gate passed."
+
+      # ── Diff-level coverage [informational] (§CI-Time Enforcement #11) ──
+      # Measures coverage on new/modified lines only. Threshold from
+      # vars.DIFF_COVERAGE_THRESHOLD (default 80%). Informational until
+      # promoted to hard-gate per Phased Enforcement Architecture.
+      - name: Diff-level coverage (PowerShell)
+        if: (success() || failure()) && needs.detect.outputs.has-powershell == 'true'
+        shell: bash
+        env:
+          DIFF_COVERAGE_THRESHOLD: ${{ vars.DIFF_COVERAGE_THRESHOLD }}
+        run: |
+          THRESHOLD="${DIFF_COVERAGE_THRESHOLD:-80}"
+          if [ ! -f coverage.xml ]; then
+            echo "No PowerShell coverage report — skipping diff-level coverage."
+            exit 0
+          fi
+          # Compute merge base for diff.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null || echo "")
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Cannot determine base commit — skipping diff-level coverage."
+            exit 0
+          fi
+          # Get changed lines from diff.
+          CHANGED_LINES=$(git diff "$BASE" HEAD --unified=0 -- '*.ps1' '*.psm1' | \
+            grep -E '^\+[^+]' | wc -l || echo 0)
+          if [ "$CHANGED_LINES" -eq 0 ]; then
+            echo "No coverable PowerShell lines changed — diff-level coverage passes."
+            exit 0
+          fi
+          # Parse JaCoCo XML for covered line ranges and intersect with diff.
+          # Simplified: count INSTRUCTION covered/missed from JaCoCo report.
+          echo "Diff-level coverage (PowerShell): $CHANGED_LINES changed lines detected."
+          echo "Full JaCoCo diff-level analysis deferred to hard-gate promotion."
+          echo "Whole-project coverage reported above."
+          # Informational — always exit 0.
+
+      # ── Publish test summary ───────────────────────────────────────────
+      # §CI-Time Enforcement #12: JUnit XML results in step summary.
+      - name: Publish Test Summary
+        if: always()
+        shell: bash
+        run: |
+          for results_file in testResults.xml; do
+            if [ ! -f "$results_file" ]; then continue; fi
+
+            echo "## Test Results: ${results_file}" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+
+            # Extract totals from JUnit XML.
+            tests=$(grep -oP 'tests="\K[^"]+' "$results_file" | head -1 || echo "0")
+            failures=$(grep -oP 'failures="\K[^"]+' "$results_file" | head -1 || echo "0")
+            errors=$(grep -oP 'errors="\K[^"]+' "$results_file" | head -1 || echo "0")
+            skipped=$(grep -oP 'skipped="\K[^"]+' "$results_file" | head -1 || echo "0")
+            passed=$((tests - failures - errors - skipped))
+
+            echo "| Passed | Failed | Errors | Skipped | Total |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|--------|--------|---------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| ${passed} | ${failures} | ${errors} | ${skipped} | ${tests} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # ── Upload test results ────────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: test-results-powershell
+          path: testResults.xml
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+          if-no-files-found: ignore
+
+      # ── Upload coverage ────────────────────────────────────────────────
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: coverage-powershell
+          path: coverage.xml
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+          if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Job 3b: Test — Python (Ubuntu, needs: [detect, lint])
+  # Only runs when source-changed and has-python are both true.
+  # §CI-Time Enforcement #7: Tests with coverage enforcement.
+  # ════════════════════════════════════════════════════════════════════════
+  test-python:
+    name: Test (Python)
+    needs: [detect, lint]
+    timeout-minutes: 15
+    if: |
+      github.event_name != 'schedule' &&
+      (github.event_name == 'push' || github.event.pull_request.draft != true) &&
+      needs.detect.outputs.source-changed == 'true' &&
+      needs.detect.outputs.has-python == 'true'
+    runs-on: ubuntu-24.04
+
+    steps:
+      # Runner hardening — monitors network egress and process activity.
+      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
+      - name: Harden runner
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            agent.api.stepsecurity.io:443
+            objects.githubusercontent.com:443
+            cache.actions.githubusercontent.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            results-receiver.actions.githubusercontent.com:443
+            productionresultssa0.blob.core.windows.net:443
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      # ── Version injection (duplicated — step outputs don't cross jobs) ─
+      # §CI-Time Enforcement #6: MUST run before any test step.
+      - name: Inject build version
+        shell: bash
+        run: |
+          placeholder='<BUILD_VERSION>'
+          short_sha=$(git rev-parse --short HEAD)
+
+          ref_name="${GITHUB_REF}"
+          if [[ "$ref_name" == refs/tags/* ]]; then
+            tag="${ref_name#refs/tags/}"
+            resolved_version="${tag}+${short_sha}"
+          else
+            resolved_version="${short_sha}"
+          fi
+
+          files_with_placeholder=$(grep -rl "$placeholder" --include='*.ps1' --include='*.psm1' --include='*.psd1' --include='*.py' --include='*.php' --include='*.sh' --include='*.bat' --include='*.yml' --include='*.yaml' --include='*.json' . 2>/dev/null | grep -v '.git/' || true)
+
+          if [ -z "$files_with_placeholder" ]; then
+            echo "No files contain the ${placeholder} placeholder — skipping version injection."
+            exit 0
+          fi
+
+          echo "Injecting version ${resolved_version} into:"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            sed -i "s|${placeholder}|${resolved_version}|g" "$file"
+            echo "  ${file}"
+          done <<< "$files_with_placeholder"
+          echo "Version injection complete."
+
+      # ── Python: Setup and test ─────────────────────────────────────────
+      # §CI-Time Enforcement #7: pytest with coverage.
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
+
+      - name: Run Python tests
+        shell: bash
+        run: |
+          if command -v pytest > /dev/null 2>&1; then
+            echo "Running pytest with coverage..."
+            if python -c "import pytest_cov" 2>/dev/null; then
+              pytest --tb=short --junitxml=testResults-python.xml --cov --cov-report=xml:coverage-python.xml
+            else
+              pytest --tb=short --junitxml=testResults-python.xml
+            fi
+          elif [ -d tests ] && find tests -name '*.py' | head -1 | grep -q .; then
+            echo "Running unittest..."
+            python -m unittest discover -s tests 2>&1
+          else
+            echo "No Python test framework detected — skipping."
+          fi
 
       # ── Python coverage enforcement ────────────────────────────────────
       - name: Enforce Python coverage threshold
@@ -1302,48 +1672,13 @@ jobs:
           # Informational — always exit 0.
           exit 0
 
-      - name: Diff-level coverage (PowerShell)
-        if: (success() || failure()) && needs.detect.outputs.has-powershell == 'true'
-        shell: bash
-        env:
-          DIFF_COVERAGE_THRESHOLD: ${{ vars.DIFF_COVERAGE_THRESHOLD }}
-        run: |
-          THRESHOLD="${DIFF_COVERAGE_THRESHOLD:-80}"
-          if [ ! -f coverage.xml ]; then
-            echo "No PowerShell coverage report — skipping diff-level coverage."
-            exit 0
-          fi
-          # Compute merge base for diff.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null || echo "")
-          else
-            BASE="${{ github.event.before }}"
-          fi
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "Cannot determine base commit — skipping diff-level coverage."
-            exit 0
-          fi
-          # Get changed lines from diff.
-          CHANGED_LINES=$(git diff "$BASE" HEAD --unified=0 -- '*.ps1' '*.psm1' | \
-            grep -E '^\+[^+]' | wc -l || echo 0)
-          if [ "$CHANGED_LINES" -eq 0 ]; then
-            echo "No coverable PowerShell lines changed — diff-level coverage passes."
-            exit 0
-          fi
-          # Parse JaCoCo XML for covered line ranges and intersect with diff.
-          # Simplified: count INSTRUCTION covered/missed from JaCoCo report.
-          echo "Diff-level coverage (PowerShell): $CHANGED_LINES changed lines detected."
-          echo "Full JaCoCo diff-level analysis deferred to hard-gate promotion."
-          echo "Whole-project coverage reported above."
-          # Informational — always exit 0.
-
       # ── Publish test summary ───────────────────────────────────────────
       # §CI-Time Enforcement #12: JUnit XML results in step summary.
       - name: Publish Test Summary
         if: always()
         shell: bash
         run: |
-          for results_file in testResults.xml testResults-python.xml testResults-php.xml; do
+          for results_file in testResults-python.xml; do
             if [ ! -f "$results_file" ]; then continue; fi
 
             echo "## Test Results: ${results_file}" >> "$GITHUB_STEP_SUMMARY"
@@ -1367,12 +1702,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: test-results
-          path: |
-            testResults.xml
-            testResults-python.xml
-            testResults-php.xml
-          retention-days: 30
+          name: test-results-python
+          path: testResults-python.xml
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
       # ── Upload coverage ────────────────────────────────────────────────
@@ -1380,11 +1712,124 @@ jobs:
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: coverage-report
-          path: |
-            coverage.xml
-            coverage-python.xml
-          retention-days: 30
+          name: coverage-python
+          path: coverage-python.xml
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+          if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Job 3c: Test — PHP (Ubuntu, needs: [detect, lint])
+  # Only runs when source-changed and has-php are both true.
+  # §CI-Time Enforcement #7: Tests with coverage enforcement.
+  # ════════════════════════════════════════════════════════════════════════
+  test-php:
+    name: Test (PHP)
+    needs: [detect, lint]
+    timeout-minutes: 15
+    if: |
+      github.event_name != 'schedule' &&
+      (github.event_name == 'push' || github.event.pull_request.draft != true) &&
+      needs.detect.outputs.source-changed == 'true' &&
+      needs.detect.outputs.has-php == 'true'
+    runs-on: ubuntu-24.04
+
+    steps:
+      # Runner hardening — monitors network egress and process activity.
+      # SHA obtained from: https://github.com/step-security/harden-runner/releases/tag/v2.16.1
+      - name: Harden runner
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            agent.api.stepsecurity.io:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            productionresultssa0.blob.core.windows.net:443
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      # ── Version injection (duplicated — step outputs don't cross jobs) ─
+      # §CI-Time Enforcement #6: MUST run before any test step.
+      - name: Inject build version
+        shell: bash
+        run: |
+          placeholder='<BUILD_VERSION>'
+          short_sha=$(git rev-parse --short HEAD)
+
+          ref_name="${GITHUB_REF}"
+          if [[ "$ref_name" == refs/tags/* ]]; then
+            tag="${ref_name#refs/tags/}"
+            resolved_version="${tag}+${short_sha}"
+          else
+            resolved_version="${short_sha}"
+          fi
+
+          files_with_placeholder=$(grep -rl "$placeholder" --include='*.ps1' --include='*.psm1' --include='*.psd1' --include='*.py' --include='*.php' --include='*.sh' --include='*.bat' --include='*.yml' --include='*.yaml' --include='*.json' . 2>/dev/null | grep -v '.git/' || true)
+
+          if [ -z "$files_with_placeholder" ]; then
+            echo "No files contain the ${placeholder} placeholder — skipping version injection."
+            exit 0
+          fi
+
+          echo "Injecting version ${resolved_version} into:"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            sed -i "s|${placeholder}|${resolved_version}|g" "$file"
+            echo "  ${file}"
+          done <<< "$files_with_placeholder"
+          echo "Version injection complete."
+
+      # ── PHP: Test ──────────────────────────────────────────────────────
+      # §CI-Time Enforcement #7: PHPUnit tests.
+      - name: Run PHP tests
+        shell: bash
+        run: |
+          if command -v phpunit > /dev/null 2>&1; then
+            phpunit --log-junit testResults-php.xml
+          elif [ -f vendor/bin/phpunit ]; then
+            vendor/bin/phpunit --log-junit testResults-php.xml
+          else
+            echo "No PHP test runner found — skipping."
+          fi
+
+      # ── Publish test summary ───────────────────────────────────────────
+      # §CI-Time Enforcement #12: JUnit XML results in step summary.
+      - name: Publish Test Summary
+        if: always()
+        shell: bash
+        run: |
+          for results_file in testResults-php.xml; do
+            if [ ! -f "$results_file" ]; then continue; fi
+
+            echo "## Test Results: ${results_file}" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+
+            # Extract totals from JUnit XML.
+            tests=$(grep -oP 'tests="\K[^"]+' "$results_file" | head -1 || echo "0")
+            failures=$(grep -oP 'failures="\K[^"]+' "$results_file" | head -1 || echo "0")
+            errors=$(grep -oP 'errors="\K[^"]+' "$results_file" | head -1 || echo "0")
+            skipped=$(grep -oP 'skipped="\K[^"]+' "$results_file" | head -1 || echo "0")
+            passed=$((tests - failures - errors - skipped))
+
+            echo "| Passed | Failed | Errors | Skipped | Total |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|--------|--------|---------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| ${passed} | ${failures} | ${errors} | ${skipped} | ${tests} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # ── Upload test results ────────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: test-results-php
+          path: testResults-php.xml
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
   # ════════════════════════════════════════════════════════════════════════
@@ -1399,7 +1844,7 @@ jobs:
     timeout-minutes: 15
     # Skip draft PRs and scheduled runs (SCA runs in lint job on schedule).
     if: github.event_name != 'schedule' && (github.event_name == 'push' || github.event.pull_request.draft != true)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       attestations: write
@@ -1411,7 +1856,17 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            agent.api.stepsecurity.io:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            productionresultssa0.blob.core.windows.net:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -1599,7 +2054,7 @@ jobs:
         with:
           name: sbom
           path: sbom.cdx.json
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
       # ── Integrity manifest (§Script integrity verification) ────────────
@@ -1625,7 +2080,7 @@ jobs:
         with:
           name: integrity-manifest
           path: checksums.sha256
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
       # ── Provenance attestation [informational] (§CI-Time Enforcement #21) ─
