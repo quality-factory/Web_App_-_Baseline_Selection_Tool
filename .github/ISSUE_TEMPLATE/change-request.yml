@@ -32,7 +32,7 @@ body:
         ### 1. Triage
         - [ ] 1a. Problem statement written
         - [ ] 1b. Relevance confirmed (not duplicate, not obsolete, not out of scope)
-        - [ ] 1c. Type set (Bug, CR, or Refactoring)
+        - [ ] 1c. Category set (Bug, CR, or Refactoring)
         - [ ] 1d. Priority set
 
         ### 2. Author FD
