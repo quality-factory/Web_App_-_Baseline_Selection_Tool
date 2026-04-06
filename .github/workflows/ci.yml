@@ -114,7 +114,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════
   # Job 1: Detect (Ubuntu — language detection + change detection)
   # Always runs, including for draft PRs (other jobs check draft status).
-  # §CI-Time Enforcement #1: Language detection is fail-closed.
+  # §CI Platform Detection Requirement: Language detection is fail-closed.
   # ════════════════════════════════════════════════════════════════════════
   detect:
     name: Detect
@@ -132,6 +132,7 @@ jobs:
       python-changed: ${{ steps.changes.outputs.python-changed }}
       powershell-changed: ${{ steps.changes.outputs.powershell-changed }}
       php-changed: ${{ steps.changes.outputs.php-changed }}
+      hooks-changed: ${{ steps.changes.outputs.hooks-changed }}
       is-fork: ${{ github.event.pull_request.head.repo.fork == true }}
       governance-drift: ${{ steps.governance-drift.outputs.governance-drift }}
     steps:
@@ -200,6 +201,7 @@ jobs:
             echo "python-changed=false" >> "$GITHUB_OUTPUT"
             echo "powershell-changed=false" >> "$GITHUB_OUTPUT"
             echo "php-changed=false" >> "$GITHUB_OUTPUT"
+            echo "hooks-changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -224,6 +226,7 @@ jobs:
             echo "python-changed=true" >> "$GITHUB_OUTPUT"
             echo "powershell-changed=true" >> "$GITHUB_OUTPUT"
             echo "php-changed=true" >> "$GITHUB_OUTPUT"
+            echo "hooks-changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -236,6 +239,7 @@ jobs:
             echo "python-changed=true" >> "$GITHUB_OUTPUT"
             echo "powershell-changed=true" >> "$GITHUB_OUTPUT"
             echo "php-changed=true" >> "$GITHUB_OUTPUT"
+            echo "hooks-changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -280,6 +284,13 @@ jobs:
             echo "php-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "php-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Hook infrastructure changes — gate Windows validation job.
+          if echo "$FILES" | grep -qE '^(vendor/hooks/|\.pre-commit-config\.yaml$)'; then
+            echo "hooks-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hooks-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       # ── Governance drift check (TD-080-ARCH-COMP-01) ───────────────────
@@ -381,7 +392,7 @@ jobs:
             fi
 
             # Compute local blob SHA-1.
-            LOCAL_SHA=$(git hash-object "$file")
+            LOCAL_SHA=$(git hash-object --path "$file" "$file")
 
             # Look up canonical SHA-1 (awk exact match — no regex wildcards on dots in paths).
             CANONICAL_SHA=$(awk -F'\t' -v f="$file" '$1 == f {print $2}' /tmp/canonical-shas.tsv)
@@ -462,11 +473,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Export and assert ImageVersion
+        shell: bash
+        run: |
+          if [ -z "$ImageVersion" ]; then
+            echo "::error::ImageVersion env var is empty — runner-images may have renamed it. Cache key isolation is broken."
+            exit 1
+          fi
+          echo "ImageVersion=$ImageVersion" >> "$GITHUB_ENV"
+
       # ── GitHub App token for CI-triggering pushes (§issue #76) ─────────
       # Generates a short-lived installation token from the quality-factory-ci
       # GitHub App. Pushes authenticated with this token trigger pull_request
       # events (unlike PAT pushes). Available as steps.app-token.outputs.token.
-      # Suppression inventory operations remain on FACTORY_PAT (TD-076-TC-10).
+      # Suppression inventory operations use App token (variables: write). See #197.
       - name: Generate GitHub App token
         id: app-token
         if: vars.QF_APP_ID != ''
@@ -538,7 +558,7 @@ jobs:
           exit 1
 
       # ── Secrets scanning (§Secret and credential handling) ─────────────
-      # §CI-Time Enforcement #5: Scans full git history for accidentally
+      # §CI-Time Enforcement #1: Scans full git history for accidentally
       # committed secrets using gitleaks. Version pinned with SHA-256
       # integrity verification to prevent supply-chain attacks.
       # To update: change GITLEAKS_VERSION and GITLEAKS_SHA256 in the
@@ -613,7 +633,7 @@ jobs:
           "${extract_path}/gitleaks" detect --source . --verbose --log-opts='--all'
 
       # ── Version injection (§Version traceability) ──────────────────────
-      # §CI-Time Enforcement #6: Generic — finds all files containing the
+      # §Release Workflow Requirements, req 1: Generic — finds all files containing the
       # <BUILD_VERSION> placeholder and replaces with tag+SHA or SHA-only.
       # Repo-agnostic: works for any language. MUST run before any build,
       # install, or test step.
@@ -657,7 +677,7 @@ jobs:
         if: needs.detect.outputs.code-changed == 'true' || github.event_name == 'schedule'
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.FACTORY_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           SUPPRESSION_BASELINE: ${{ vars.SUPPRESSION_COUNT_BASELINE }}
         run: |
           # Phase 1: Count suppression directives.
@@ -685,7 +705,7 @@ jobs:
             echo ""
             echo "No baseline set (first run). Setting baseline to $TOTAL."
             gh variable set SUPPRESSION_COUNT_BASELINE --body "$TOTAL" 2>/dev/null || \
-              echo "::warning::Could not set baseline variable — FACTORY_PAT may be missing."
+              echo "::warning::Could not set baseline variable — App token may lack variables permission."
             exit 0
           fi
 
@@ -712,7 +732,7 @@ jobs:
               gh issue create \
                 --title "Suppression count increased by $DELTA" \
                 --label "suppression-increase,te-advisory" \
-                --body "$ISSUE_BODY" 2>/dev/null || echo "::warning::Could not create issue — FACTORY_PAT may be missing."
+                --body "$ISSUE_BODY" 2>/dev/null || echo "::warning::Could not create issue — check App token permissions."
             fi
           elif [ "$DELTA" -lt 0 ]; then
             echo "Suppression count decreased by $((-DELTA)). Good progress."
@@ -723,7 +743,7 @@ jobs:
           # Phase 4: Update baseline on push to main only.
           if [ "${{ github.event_name }}" = "push" ]; then
             gh variable set SUPPRESSION_COUNT_BASELINE --body "$TOTAL" 2>/dev/null || \
-              echo "::warning::Could not update baseline — FACTORY_PAT may be missing."
+              echo "::warning::Could not update baseline — App token may lack variables permission."
           fi
 
       # ── PowerShell: Ensure PS module cache directory ───────────────────
@@ -871,13 +891,32 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
+      # §Python Dependency Management [Normative]: pyproject.toml is the sole
+      # Python dependency manifest. requirements.txt and requirements-dev.txt
+      # are prohibited. Hard gate — exit 1 from day one (HM decision #155).
+      - name: Enforce pyproject.toml standard
+        if: needs.detect.outputs.has-python == 'true'
+        shell: bash
+        run: |
+          VIOLATION=0
+          for f in requirements.txt requirements-dev.txt; do
+            if [ -f "$f" ]; then
+              echo "::error::$f detected at repository root."
+              VIOLATION=1
+            fi
+          done
+          if [ "$VIOLATION" -eq 1 ]; then
+            echo "The factory standard requires pyproject.toml for Python dependency management."
+            echo "Migrate dependencies to pyproject.toml [project.dependencies] and delete requirements*.txt."
+            echo "See: SubscriptionFactory.md §Python Dependency Management"
+            exit 1
+          fi
+
       - name: Install Python dependencies
         if: needs.detect.outputs.python-changed == 'true' && needs.detect.outputs.has-python == 'true'
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
 
       - name: Python compile check
@@ -974,31 +1013,8 @@ jobs:
                 echo "::notice::pip-audit found advisories or failed. Review output above."
                 ADVISORY_FOUND=1
               }
-            elif [ -f requirements.txt ]; then
-              echo "pip-audit not available — querying OSV.dev for pinned packages..."
-              while IFS= read -r line; do
-                pkg=$(echo "$line" | sed -n 's/^\([a-zA-Z0-9_-]*\)==\([0-9.]*\).*/\1/p')
-                ver=$(echo "$line" | sed -n 's/^\([a-zA-Z0-9_-]*\)==\([0-9.]*\).*/\2/p')
-                [ -z "$pkg" ] && continue
-                # Retry on transient failures (§CI-Time Enforcement #21 — retry policy).
-                response=""
-                for attempt in 1 2 3 4; do
-                  response=$(curl -s -X POST 'https://api.osv.dev/v1/query' \
-                    -H 'Content-Type: application/json' \
-                    -d "{\"version\":\"${ver}\",\"package\":{\"name\":\"${pkg}\",\"ecosystem\":\"PyPI\"}}" 2>/dev/null) && break
-                  echo "  [RETRY] osv.dev query failed for ${pkg} (attempt $attempt/4). Retrying in $((2 ** attempt))s..."
-                  sleep $((2 ** attempt))
-                done
-                vulns=$(echo "$response" | grep -o '"id"' | wc -l || true)
-                if [ "$vulns" -gt 0 ]; then
-                  echo "::warning::${pkg} ${ver} has known advisories"
-                  ADVISORY_FOUND=1
-                else
-                  echo "  ${pkg} ${ver}: no known advisories"
-                fi
-              done < requirements.txt
             else
-              echo "No requirements.txt and pip-audit not available — skipping Python SCA."
+              echo "pip-audit not available — skipping Python SCA."
             fi
             echo ""
           fi
@@ -1010,7 +1026,7 @@ jobs:
             for mod_spec in "PSScriptAnalyzer:1.25.0:nuget" "Pester:5.7.1:nuget"; do
               IFS=':' read -r name version ecosystem <<< "$mod_spec"
               echo "Checking ${name} ${version} for known advisories..."
-              # Retry on transient failures (§CI-Time Enforcement #21 — retry policy).
+              # Retry on transient failures (§CI-Time Enforcement #23 — retry policy).
               response=""
               for attempt in 1 2 3 4; do
                 response=$(curl -s -X POST 'https://api.osv.dev/v1/query' \
@@ -1064,7 +1080,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════
   # Job 3a: Test — PowerShell (Windows, needs: [detect, lint])
   # Only runs when source-changed and has-powershell are both true.
-  # §CI-Time Enforcement #7: Tests with coverage enforcement.
+  # §CI-Time Enforcement #11: Tests with coverage enforcement.
   # ════════════════════════════════════════════════════════════════════════
   test-powershell:
     name: Test (PowerShell)
@@ -1100,8 +1116,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Export and assert ImageVersion
+        shell: bash
+        run: |
+          if [ -z "$ImageVersion" ]; then
+            echo "::error::ImageVersion env var is empty — runner-images may have renamed it. Cache key isolation is broken."
+            exit 1
+          fi
+          echo "ImageVersion=$ImageVersion" >> "$GITHUB_ENV"
+
       # ── Version injection (duplicated — step outputs don't cross jobs) ─
-      # §CI-Time Enforcement #6: MUST run before any test step.
+      # §Release Workflow Requirements, req 1: MUST run before any test step.
       - name: Inject build version
         shell: bash
         run: |
@@ -1198,7 +1223,7 @@ jobs:
           }
 
       # ── PowerShell: Code signing (conditional) ────────────────────────
-      # §CI-Time Enforcement #9: Conditional on secrets.CODE_SIGNING_CERT_PFX.
+      # Code signing (conditional on secrets.CODE_SIGNING_CERT_PFX).
       # Skipped for fork PRs (reduced-privilege execution — no secret access).
       - name: Sign scripts
         if: needs.detect.outputs.is-fork != 'true'
@@ -1267,7 +1292,7 @@ jobs:
           }
 
       # ── PowerShell: Install Pester (integrity-verified) ────────────────
-      # §CI-Time Enforcement #7: Test execution with coverage.
+      # §CI-Time Enforcement #11: Test execution with coverage.
       - name: Install Pester
         if: needs.detect.outputs.has-powershell == 'true'
         shell: pwsh
@@ -1318,7 +1343,7 @@ jobs:
           }
 
       # ── PowerShell: Run Pester tests ───────────────────────────────────
-      # §CI-Time Enforcement #7: Pester with JaCoCo coverage output.
+      # §CI-Time Enforcement #11: Pester with JaCoCo coverage output.
       # Coverage paths are auto-discovered from src/ — repo-agnostic.
       - name: Run Pester tests
         if: needs.detect.outputs.has-powershell == 'true'
@@ -1352,10 +1377,10 @@ jobs:
           $config.CodeCoverage.OutputPath = 'coverage.xml'
           $config.TestResult.Enabled      = $true
           $config.TestResult.OutputFormat  = 'JUnitXml'
-          $config.TestResult.OutputPath    = './testResults.xml'
+          $config.TestResult.OutputPath    = './testResults-powershell.xml'
           Invoke-Pester -Configuration $config
 
-      # ── Coverage enforcement (§CI-Time Enforcement #7) ─────────────────
+      # ── Coverage enforcement (§CI-Time Enforcement #11) ─────────────────
       # Threshold from vars.COVERAGE_THRESHOLD repo variable.
       # Default behavior: informational (skip enforcement if not set).
       - name: Enforce code coverage threshold
@@ -1451,12 +1476,12 @@ jobs:
           # Informational — always exit 0.
 
       # ── Publish test summary ───────────────────────────────────────────
-      # §CI-Time Enforcement #12: JUnit XML results in step summary.
+      # §CI-Time Enforcement #20: JUnit XML results in step summary.
       - name: Publish Test Summary
         if: always()
         shell: bash
         run: |
-          for results_file in testResults.xml; do
+          for results_file in testResults-powershell.xml; do
             if [ ! -f "$results_file" ]; then continue; fi
 
             echo "## Test Results: ${results_file}" >> "$GITHUB_STEP_SUMMARY"
@@ -1481,7 +1506,7 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-results-powershell
-          path: testResults.xml
+          path: testResults-powershell.xml
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
@@ -1498,7 +1523,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════
   # Job 3b: Test — Python (Ubuntu, needs: [detect, lint])
   # Only runs when source-changed and has-python are both true.
-  # §CI-Time Enforcement #7: Tests with coverage enforcement.
+  # §CI-Time Enforcement #11: Tests with coverage enforcement.
   # ════════════════════════════════════════════════════════════════════════
   test-python:
     name: Test (Python)
@@ -1535,7 +1560,7 @@ jobs:
           fetch-depth: 0
 
       # ── Version injection (duplicated — step outputs don't cross jobs) ─
-      # §CI-Time Enforcement #6: MUST run before any test step.
+      # §Release Workflow Requirements, req 1: MUST run before any test step.
       - name: Inject build version
         shell: bash
         run: |
@@ -1566,19 +1591,36 @@ jobs:
           echo "Version injection complete."
 
       # ── Python: Setup and test ─────────────────────────────────────────
-      # §CI-Time Enforcement #7: pytest with coverage.
+      # §CI-Time Enforcement #11: pytest with coverage.
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.14'
           cache: 'pip'
 
+      # §Python Dependency Management [Normative]: defense-in-depth enforcement.
+      - name: Enforce pyproject.toml standard
+        if: needs.detect.outputs.has-python == 'true'
+        shell: bash
+        run: |
+          VIOLATION=0
+          for f in requirements.txt requirements-dev.txt; do
+            if [ -f "$f" ]; then
+              echo "::error::$f detected at repository root."
+              VIOLATION=1
+            fi
+          done
+          if [ "$VIOLATION" -eq 1 ]; then
+            echo "The factory standard requires pyproject.toml for Python dependency management."
+            echo "Migrate dependencies to pyproject.toml [project.dependencies] and delete requirements*.txt."
+            echo "See: SubscriptionFactory.md §Python Dependency Management"
+            exit 1
+          fi
+
       - name: Install Python dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
 
       - name: Run Python tests
@@ -1673,7 +1715,7 @@ jobs:
           exit 0
 
       # ── Publish test summary ───────────────────────────────────────────
-      # §CI-Time Enforcement #12: JUnit XML results in step summary.
+      # §CI-Time Enforcement #20: JUnit XML results in step summary.
       - name: Publish Test Summary
         if: always()
         shell: bash
@@ -1720,7 +1762,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════
   # Job 3c: Test — PHP (Ubuntu, needs: [detect, lint])
   # Only runs when source-changed and has-php are both true.
-  # §CI-Time Enforcement #7: Tests with coverage enforcement.
+  # §CI-Time Enforcement #11: Tests with coverage enforcement.
   # ════════════════════════════════════════════════════════════════════════
   test-php:
     name: Test (PHP)
@@ -1747,6 +1789,8 @@ jobs:
             objects.githubusercontent.com:443
             results-receiver.actions.githubusercontent.com:443
             productionresultssa0.blob.core.windows.net:443
+            pypi.org:443
+            files.pythonhosted.org:443
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -1754,7 +1798,7 @@ jobs:
           fetch-depth: 0
 
       # ── Version injection (duplicated — step outputs don't cross jobs) ─
-      # §CI-Time Enforcement #6: MUST run before any test step.
+      # §Release Workflow Requirements, req 1: MUST run before any test step.
       - name: Inject build version
         shell: bash
         run: |
@@ -1784,21 +1828,148 @@ jobs:
           done <<< "$files_with_placeholder"
           echo "Version injection complete."
 
+      # ── PHP: Dependencies ────────────────────────────────────────────
+      # Install project-level PHP dependencies via Composer when available.
+      # Provides modern PHPUnit with --coverage-cobertura support (#200).
+      - name: Install PHP dependencies (Composer)
+        if: needs.detect.outputs.has-php == 'true'
+        shell: bash
+        run: |
+          if [ -f composer.json ]; then
+            echo "composer.json found — installing PHP dependencies..."
+            composer install --no-interaction --prefer-dist --quiet || {
+              echo "::warning::Composer install failed — falling back to system PHPUnit."
+            }
+          else
+            echo "No composer.json — skipping Composer install."
+          fi
+
       # ── PHP: Test ──────────────────────────────────────────────────────
-      # §CI-Time Enforcement #7: PHPUnit tests.
+      # §CI-Time Enforcement #11: PHPUnit tests.
       - name: Run PHP tests
         shell: bash
         run: |
-          if command -v phpunit > /dev/null 2>&1; then
-            phpunit --log-junit testResults-php.xml
-          elif [ -f vendor/bin/phpunit ]; then
-            vendor/bin/phpunit --log-junit testResults-php.xml
+          # Detect coverage driver availability
+          COV_FLAGS=""
+          if php -m 2>/dev/null | grep -qi "xdebug\|pcov"; then
+            COV_FLAGS="--coverage-clover=coverage-php.xml"
+            echo "Coverage driver detected — coverage report will be generated."
+          else
+            echo "No coverage driver (Xdebug/PCOV) — running tests without coverage."
+          fi
+
+          # Prefer vendor PHPUnit (modern, Cobertura-capable) over system (8.5, Clover-only).
+          # $COV_FLAGS intentionally unquoted — expands to nothing when empty.
+          if [ -f vendor/bin/phpunit ]; then
+            # Modern PHPUnit via Composer — upgrade to Cobertura format if driver available.
+            if [ -n "$COV_FLAGS" ]; then
+              COV_FLAGS="--coverage-cobertura=coverage-php.xml"
+              echo "Using vendor/bin/phpunit with Cobertura coverage."
+            else
+              echo "Using vendor/bin/phpunit without coverage (no driver)."
+            fi
+            vendor/bin/phpunit --log-junit testResults-php.xml $COV_FLAGS
+          elif command -v phpunit > /dev/null 2>&1; then
+            # System PHPUnit (likely 8.5) — Clover format only.
+            if [ -n "$COV_FLAGS" ]; then
+              echo "Using system phpunit with Clover coverage."
+            else
+              echo "Using system phpunit without coverage (no driver)."
+            fi
+            phpunit --log-junit testResults-php.xml $COV_FLAGS
           else
             echo "No PHP test runner found — skipping."
           fi
 
+      # ── PHP coverage enforcement (§CI-Time Enforcement #11) ──────────
+      - name: Enforce PHP coverage threshold
+        if: (success() || failure()) && needs.detect.outputs.has-php == 'true'
+        shell: bash
+        env:
+          COVERAGE_THRESHOLD: ${{ vars.COVERAGE_THRESHOLD }}
+        run: |
+          if [ -z "$COVERAGE_THRESHOLD" ]; then
+            echo "COVERAGE_THRESHOLD not configured — coverage enforcement skipped (informational mode)."
+            if [ -f coverage-php.xml ]; then
+              echo "Coverage report generated. Review coverage-php.xml for details."
+            fi
+            exit 0
+          fi
+
+          if [ ! -f coverage-php.xml ]; then
+            echo "coverage-php.xml not found — cannot enforce coverage threshold."
+            exit 1
+          fi
+
+          # Auto-detect format: Cobertura (vendor PHPUnit 9.3+) or Clover (system PHPUnit 8.5).
+          line_rate=$(grep -oP 'line-rate="\K[^"]+' coverage-php.xml | head -1)
+          if [ -n "$line_rate" ]; then
+            # Cobertura format — same parser as Python coverage.
+            percent=$(echo "$line_rate * 100" | bc -l 2>/dev/null | xargs printf "%.2f" 2>/dev/null || echo "unknown")
+            echo "Code coverage (Cobertura): ${percent}%"
+          else
+            # Clover format fallback — legacy parser for system PHPUnit 8.5.
+            stmts=$(grep -oP 'statements="\K[^"]+' coverage-php.xml | tail -1)
+            covered=$(grep -oP 'coveredstatements="\K[^"]+' coverage-php.xml | tail -1)
+            if [ -z "$stmts" ] || [ "$stmts" = "0" ]; then
+              echo "::error::Cannot parse coverage from coverage-php.xml (neither Cobertura nor Clover)"
+              exit 1
+            fi
+            percent=$(echo "scale=2; $covered * 100 / $stmts" | bc -l 2>/dev/null || echo "unknown")
+            echo "Code coverage (Clover): ${percent}%"
+            line_rate=$(echo "scale=4; $covered / $stmts" | bc -l 2>/dev/null)
+          fi
+          echo "Threshold:     ${COVERAGE_THRESHOLD}%"
+
+          if [ "$(echo "$line_rate * 100 < $COVERAGE_THRESHOLD" | bc -l 2>/dev/null)" = "1" ]; then
+            echo "::error::Code coverage ${percent}% is below the required ${COVERAGE_THRESHOLD}%."
+            exit 1
+          fi
+          echo "Coverage gate passed."
+
+      # ── Diff-level coverage [informational] (§CI-Time Enforcement #11) ──
+      # Measures coverage on new/modified lines only. Requires Cobertura XML
+      # (produced by vendor PHPUnit 9.3+). Skips for Clover XML (system PHPUnit 8.5).
+      - name: Diff-level coverage (PHP)
+        if: (success() || failure()) && needs.detect.outputs.has-php == 'true'
+        shell: bash
+        env:
+          DIFF_COVERAGE_THRESHOLD: ${{ vars.DIFF_COVERAGE_THRESHOLD }}
+        run: |
+          THRESHOLD="${DIFF_COVERAGE_THRESHOLD:-80}"
+          if [ ! -f coverage-php.xml ]; then
+            echo "No PHP coverage report — skipping diff-level coverage."
+            exit 0
+          fi
+          # diff-cover requires Cobertura format — check before installing.
+          if ! grep -q 'line-rate=' coverage-php.xml; then
+            echo "PHP coverage is Clover format (system PHPUnit) — diff-cover requires Cobertura. Skipping."
+            exit 0
+          fi
+          pip install diff-cover --quiet 2>/dev/null || {
+            echo "::warning::Could not install diff-cover — skipping diff-level coverage."
+            exit 0
+          }
+          # Compute merge base for diff.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null || echo "")
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Cannot determine base commit — skipping diff-level coverage."
+            exit 0
+          fi
+          echo "Diff-level coverage (PHP) against base $BASE, threshold ${THRESHOLD}%:"
+          diff-cover coverage-php.xml --compare-branch="$BASE" \
+            --fail-under="$THRESHOLD" --show-uncovered 2>&1 || {
+            echo "::warning::Diff-level coverage below ${THRESHOLD}%. Review uncovered lines above."
+          }
+          # Informational — always exit 0.
+          exit 0
+
       # ── Publish test summary ───────────────────────────────────────────
-      # §CI-Time Enforcement #12: JUnit XML results in step summary.
+      # §CI-Time Enforcement #20: JUnit XML results in step summary.
       - name: Publish Test Summary
         if: always()
         shell: bash
@@ -1829,6 +2000,16 @@ jobs:
         with:
           name: test-results-php
           path: testResults-php.xml
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+          if-no-files-found: ignore
+
+      # ── Upload coverage ────────────────────────────────────────────────
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: coverage-php
+          path: coverage-php.xml
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
@@ -2018,21 +2199,27 @@ jobs:
           echo '{"bomFormat":"CycloneDX","specVersion":"1.5","version":1,"components":[' > sbom.cdx.json
           FIRST=true
 
-          # Python dependencies.
-          if [ "${{ needs.detect.outputs.has-python }}" = "true" ]; then
-            for req in requirements.txt requirements-dev.txt; do
-              if [ -f "$req" ]; then
-                while IFS= read -r line; do
-                  line=$(echo "$line" | sed 's/#.*//' | tr -d '[:space:]')
-                  [ -z "$line" ] && continue
-                  [[ "$line" == -* ]] && continue
-                  name=$(echo "$line" | sed 's/[>=<!\[].*//;s/\s.*//')
-                  version=$(echo "$line" | grep -oP '==\K[^,;]+' || echo "unspecified")
-                  if [ "$FIRST" = true ]; then FIRST=false; else echo ',' >> sbom.cdx.json; fi
-                  echo "{\"type\":\"library\",\"name\":\"$name\",\"version\":\"$version\",\"purl\":\"pkg:pypi/$name@$version\"}" >> sbom.cdx.json
-                done < "$req"
-              fi
-            done
+          # Python dependencies (from pyproject.toml — §Python Dependency Management).
+          if [ "${{ needs.detect.outputs.has-python }}" = "true" ] && [ -f pyproject.toml ]; then
+            python3 -c "
+          import tomllib, json
+          with open('pyproject.toml', 'rb') as f:
+              cfg = tomllib.load(f)
+          deps = list(cfg.get('project', {}).get('dependencies', []))
+          for group_deps in cfg.get('project', {}).get('optional-dependencies', {}).values():
+              deps.extend(group_deps)
+          for dep in deps:
+              name = dep.split('[')[0].split('>')[0].split('<')[0].split('=')[0].split('!')[0].split('~')[0].split(';')[0].strip()
+              ver = 'unspecified'
+              if '==' in dep:
+                  ver = dep.split('==')[1].split(',')[0].split(';')[0].strip()
+              print(json.dumps({'type': 'library', 'name': name, 'version': ver, 'purl': f'pkg:pypi/{name}@{ver}'}))
+          " > /tmp/sbom-python-deps.json
+            while IFS= read -r component; do
+              if [ "$FIRST" = true ]; then FIRST=false; else echo ',' >> sbom.cdx.json; fi
+              echo "$component" >> sbom.cdx.json
+            done < /tmp/sbom-python-deps.json
+            rm -f /tmp/sbom-python-deps.json
           fi
 
           # PowerShell dependencies (pinned in CI env vars).
@@ -2083,7 +2270,7 @@ jobs:
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           if-no-files-found: ignore
 
-      # ── Provenance attestation [informational] (§CI-Time Enforcement #21) ─
+      # ── Provenance attestation [informational] (§CI-Time Enforcement #24) ─
       # Generates signed in-toto provenance attestations for CI artifacts
       # (SBOM and integrity manifest) via Sigstore keyless signing.
       # Non-blocking: attestation infrastructure failure does not fail CI.
@@ -2101,3 +2288,45 @@ jobs:
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: checksums.sha256
+
+  # ── Windows hook validation ───────────────────────────────────────────
+  # §Commit-Time Enforcement: validate all hooks on Windows (Git Bash).
+  # Triggered only when hook infrastructure files change (TD-082-ARCH-DD02).
+  validate-hooks:
+    name: Validate Hooks (Windows)
+    needs: [detect]
+    # Skip draft PRs; push and schedule events always run.
+    if: >-
+      needs.detect.outputs.hooks-changed == 'true'
+      && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.draft != true)
+    # Pinned runner label: avoid silent image drift (CR #126 / TD-126-DD-01).
+    runs-on: windows-2025
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install pre-commit
+        shell: bash
+        run: pip install pre-commit
+
+      - name: Run pre-commit hooks (pre-commit stage)
+        shell: bash
+        run: pre-commit run --all-files
+
+      - name: Test commit-msg stage
+        shell: bash
+        run: |
+          tmpdir=$(mktemp -d 2>/dev/null || echo "$TEMP/hook-test-$$")
+          mkdir -p "$tmpdir"
+          git init "$tmpdir/repo"
+          msg_file="$tmpdir/repo/COMMIT_MSG"
+          echo "test: validate conventional commit hook on Windows" > "$msg_file"
+          bash vendor/hooks/conventional-commit.sh "$msg_file"

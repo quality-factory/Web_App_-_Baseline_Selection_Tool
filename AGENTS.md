@@ -293,6 +293,21 @@ Every user-visible artifact produced by this project MUST include a version iden
 - Every CI/CD workflow that produces a release from a Git tag MUST include the exact commit SHA in the release body or release notes. This ensures bidirectional traceability: users can resolve a commit SHA to a release tag, and a release tag to the commit SHA that produced it.
 - Release tags used as version identifiers MUST be protected against mutation after creation. Repositories MUST enable tag protection rules (or equivalent mechanism) for the release tag pattern. A CI/CD workflow MUST fail the build if it detects that the triggering tag has been previously used and re-pointed to a different commit.
 
+### GitHub Actions workflow authoring
+
+Agents MUST comply with [Factory Spec §Infrastructure Cost Governance] for CI/CD cost governance policy.
+
+When creating or modifying workflow files:
+
+- Always add a `concurrency` group to prevent parallel runs stacking up:
+  ```yaml
+  concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+  ```
+- Limit trigger event types to the minimum required for the workflow's purpose. Do not include events that do not affect the workflow's input (for example, `synchronize` for a title-only check).
+- Never add a matrix strategy without an explicit `max-parallel` limit.
+
 ### Documentation enforcement
 
 Agents MUST comply with [Factory Spec §Operations Guide Requirements] for operations guide maintenance policy and [Factory Spec §Documentation Governance Requirements] for documentation governance policy.

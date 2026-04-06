@@ -137,6 +137,9 @@ def _run_per_file(definition: CheckDefinition, files: list[str], root: Path) -> 
             failures.append(f"{filepath}: timed out")
     duration = time.monotonic() - start
     status = "fail" if failures else "pass"
+    # Informational gate: always pass (consistent with run_check)
+    if definition.gate == "informational" and status == "fail":
+        status = "pass"
     output = "\n".join(failures) if failures else ""
     return CheckResult(
         name=definition.name,
