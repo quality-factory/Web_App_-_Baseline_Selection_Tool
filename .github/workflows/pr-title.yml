@@ -2,11 +2,15 @@ name: PR Title
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: pr-title-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check-title:

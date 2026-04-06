@@ -20,7 +20,7 @@ repos:
 
       - id: trailing-whitespace
         name: trim trailing whitespace
-        entry: sed -i 's/[[:space:]]*$//'
+        entry: python vendor/hooks/trailing-whitespace-fixer.py
         language: system
         types: [text]
         stages: [pre-commit]
